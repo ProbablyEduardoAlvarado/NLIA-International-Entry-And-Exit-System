@@ -2,7 +2,11 @@ package org.example;
 import java.sql.CallableStatement;
 import java.sql.Connection; // Required import
 import java.sql.SQLException;
+import java.sql.PreparedStatement; // Added for checkAlienNumberIntegrity usage
+import java.sql.ResultSet; // Added for checkAlienNumberIntegrity usage
 import java.util.Scanner;
+
+import static org.example.Validators.*;
 
 
 /**
@@ -13,6 +17,7 @@ public class AdmitTraveler {
     /**
      * Prompts the user for data and calls the Admit_New_Traveler SQL function
      * using the persistent database connection.
+     *
      * @param conn The active, persistent database connection.
      */
     public void admitNewTraveler(Connection conn) { // Changed parameter to Connection
@@ -22,6 +27,10 @@ public class AdmitTraveler {
          * This section provides the ability to input all required values for the function and requires validation
          * before proceeding to the next required value. It prevents approaching the final SQL function input
          * with invalid data.
+         *
+         * In real life practice this would be validated generally quickly using the Machine Readable Zone (MRZ) and chip
+         * being read by a machine to automatically populate a majority of the admission record.  But as this is not the
+         * case, it will be all manual.  Future ideas: Maybe a GUI to make this feel saner.
          */
 
         Scanner scanner = new Scanner(System.in);
@@ -35,36 +44,123 @@ public class AdmitTraveler {
             GivenName = scanner.nextLine();
             length = GivenName.length();
 
-            if (length > 50){
+            if (length > 50) {
                 System.err.println("Invalid input. Name cannot exceed 50 characters.\n");
+            } else if (!containsOnlyLetters(GivenName)) {
+                System.err.println("Invalid input, Name should only contain characters.\n");
             }
-
-        } while(length > 50); // Loop continues as long as the input is INVALID
+        } while (length > 50 || !containsOnlyLetters(GivenName)); // Loop continues as long as the input is INVALID
 
         //Constraint: Surname < 50 chars and only CHARS
-        System.out.print("Enter Surname: ");
-        String Surname = scanner.nextLine();
+        String Surname;
+        do {
+            System.out.print("Enter Surname: ");
+            Surname = scanner.nextLine();
+            length = Surname.length();
+            if (length > 50) {
+                System.err.println("Invalid input. Name cannot exceed 50 characters.\n");
+            } else if (!containsOnlyLetters(Surname)) { // CORRECTED: Checking Surname
+                System.err.println("Invalid input, Name should only contain characters.\n");
+            }
+        } while (length > 50 || !containsOnlyLetters(Surname)); // CORRECTED: Added containsOnlyLetters check
 
-        // DOB should be in YYYY-MM-DD Format
-        System.out.print("Enter Date of Birth (YYYY-MM-DD: ");
-        String DOB = scanner.nextLine();
+
+        // Constraint: DOB should be in YYYY-MM-DD Format
+        String DOB = "";
+        boolean isValidFormat;
+
+        do {
+            System.out.print("Enter Date of Birth (YYYY-MM-DD): ");
+            DOB = scanner.nextLine();
+
+            isValidFormat = isValidDate(DOB);
+
+            if (!isValidFormat) {
+                System.err.println("Invalid input. Date must be a valid calendar date in the YYYY-MM-DD format (e.g., 2000-01-31).");
+            }
+
+        } while (!isValidFormat);
 
         System.out.print("Enter Passport Number: ");
         String PassportNumber = scanner.nextLine();
 
-        System.out.print("Enter Country of Citizenship: ");
-        String CountryCode = scanner.nextLine();
 
+        // Constraint: CountryCode MUST be within the parameters inside the country_code.txt list.  Will validate and
+        // loop until a true value is returned.
+        String CountryCode;
+        boolean isCountryCodeValid;
+
+        do {
+            System.out.print("Enter Country of Citizenship (3-letter code): ");
+            CountryCode = scanner.nextLine();
+            // Check validation only once
+            isCountryCodeValid = isValidCode(CountryCode); // Use full class name if not static imported
+            if (!isCountryCodeValid) {
+                System.err.println("\"" + CountryCode + "\" is invalid. Please enter a valid 3-letter code.");
+            }
+        } while (!isCountryCodeValid);
+
+        //Passport Issue Date YYYY-MM-DD
+        //Passport Expiry Date YYYY-MM-DD (Must be 10years minus 1 day.) If not, suspect fraud.
+        //Airline Codes MUST be 3 letters (ICAO)
+        //Flight Numbers can be up to 4 numbers.
+        //Origin Airport MUST be the IATA Code
+        //OriginCountry MAY NOT be the US, and must follow the Country Code validation
+        //ArrivalDate YYYY-MM-DD
+        //AdmissionClass Must be validated through the available class codes, and certain non-permanent residents must
+            //have their exit date calculated.
+        //AdmittedBoolean IF a person is NOT admitted (FALSE) an Alien Number MUST be entered, along with an ExitDate and DenialReason
+        // AlienNumber is set to null if the user leaves it empty/optional.
+        String AlienNumber = null;
+        boolean isANumberValid = false;
+
+        do {
+            System.out.print("Enter Alien Number (ANumber) [Optional - Format: A#########]: ");
+            String inputANumber = scanner.nextLine().trim();
+
+            if (inputANumber.isEmpty()) {
+                // Case 1: Empty/NULL is allowed
+                AlienNumber = null;
+                isANumberValid = true;
+            } else {
+                // Case 2: Check format (A#########)
+                if (!isValidANumberFormat(inputANumber)) {
+                    System.err.println("Invalid format. ANumber must start with 'A' followed by exactly 9 digits (A#########).");
+                    isANumberValid = false;
+                } else {
+                    // Case 3: Format is good, now check database integrity
+                    // Note: checkAlienNumberIntegrity is called statically from Validators
+                    try {
+                        isANumberValid = checkAlienNumberIntegrity(conn, inputANumber, PassportNumber, CountryCode);
+                    } catch (Exception e) {
+                        System.err.println("Database check failed during ANumber validation: " + e.getMessage());
+                        isANumberValid = false;
+                    }
+
+
+                    if (isANumberValid) {
+                        AlienNumber = inputANumber; // Assign only if valid
+                    } else {
+                        // Error message printed inside checkAlienNumberIntegrity or above
+                        System.err.println("Please correct the ANumber or ensure the Passport/CountryCode is correct.");
+                    }
+                }
+            }
+
+        } while (!isANumberValid);
+        // ExitDate should be calculated by a Temporary visitor's class automatically, if the admitted flag is FALSE,
+            // an override should be triggered for the officer to enter the next available flight for removal.
+        //DenialReason should not exceed 255 Chars.
 
         try {
             // Placeholder for SQL execution logic
             System.out.println("Preparing to execute SQL function with data:");
-            System.out.println("  Name: " + GivenName + ", Admission Class: " );
+            System.out.println("  Name: " + GivenName + ", Admission Class: ");
 
             // Call function Admit_New_Traveler
             CallableStatement cs = conn.prepareCall("{call Admit_New_Traveler(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)}");
-             cs.setString(1, GivenName);
-             cs.setString(2, Surname);
+            cs.setString(1, GivenName);
+            cs.setString(2, Surname);
             cs.setString(3, DOB);
             cs.setString(4, PassportNumber);
             cs.setString(5, CountryCode);
@@ -72,6 +168,14 @@ public class AdmitTraveler {
             //cs.setString(7, PassportExpiry);
             //cs.setString(8, AirlineCode);
             //cs.setString(9, FlightNumber);
+            //cs.setString(10, OriginAirport);
+            //cs.setString(11, OriginCountry);
+            //cs.setString(12, ArrivalDate);
+            //cs.setString(13, AdmissionClass); // All must have an admission class for the sake of entry.
+            //cs.setString(14, AdmittedBoolean); // IF FALSE, an AlienNumber must be generated and checked against the DB for uniqueness.
+            cs.setString(15, AlienNumber); // Can be NULL if citizen or certain classes of visas.
+            //cs.setString(16, ExitDate); // Can be NULL **IF** Citizen/Permanent Resident/IV Admitted
+            //cs.setString(17, DenialReason); // Is null if AdmittedBoolean is TRUE
 
 
             // cs.execute();
