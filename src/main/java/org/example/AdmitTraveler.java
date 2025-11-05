@@ -1,12 +1,12 @@
 package org.example;
-import java.sql.CallableStatement;
-import java.sql.Connection; // Required import
-import java.sql.SQLException;
-import java.sql.PreparedStatement; // Added for checkAlienNumberIntegrity usage
-import java.sql.ResultSet; // Added for checkAlienNumberIntegrity usage
+import java.awt.*;
+import java.sql.*;
 import java.util.Scanner;
 
+import static java.lang.Boolean.TRUE;
+import static java.sql.Types.NULL;
 import static org.example.Validators.*;
+import static org.example.admissionClasses.admissionClassValidator;
 
 
 /**
@@ -107,47 +107,61 @@ public class AdmitTraveler {
         //Origin Airport MUST be the IATA Code
         //OriginCountry MAY NOT be the US, and must follow the Country Code validation
         //ArrivalDate YYYY-MM-DD
+
+
         //AdmissionClass Must be validated through the available class codes, and certain non-permanent residents must
             //have their exit date calculated.
+        String AlienNumber;
+        String AdmissionClass;
+        String AdmissionClassInput;
+        Boolean Admitted;
+        String ExitDate;
+        String NotAdmittedReason;
+
+        /*
+        * Now that the required documentation of ALL arriving passengers are entered the admission process can
+        * begin. This IF-ELSE Statement will simply the admission for Citizens by automatically assigning:
+        * AlienNumber = NULL
+        * AdmissionClass = "C"
+        * Admitted = TRUE
+        * ExitDate = NULL
+        * NotAdmittedReason = NULL
+        * */
+        if (CountryCode.equalsIgnoreCase("USA")){
+            AlienNumber = null;
+            AdmissionClass = "C";
+            Admitted = TRUE;
+            ExitDate = null;
+            NotAdmittedReason = null;
+            
+            // All other Arrivals will be subjected to the Admissions Process and validation requirements for all
+            // arrivals through a do-while loop.
+        }else { // Returning Permanent Residents (Green Card Holders) 'PR' Class, will receive expedited validation
+            admissionClasses.printDebugStatus(); // Temporary Debug statement ensuring the AdmissionClasses have been parsed.
+            boolean isAdmissionClassValid;
+            System.out.println("Enter the Admission Class of the Arriving Alien \nReturning Permanent Residents may be coded as 'PR'/'ARC'/'LPR");
+            do {
+                AdmissionClassInput = scanner.nextLine();
+                isAdmissionClassValid = admissionClasses.admissionClassValidator(AdmissionClassInput);
+                if(!isAdmissionClassValid){
+                    System.err.println("The Admission Class is NOT VALID.  Enter a valid Class of Admission.");
+                }
+            } while (!isAdmissionClassValid);
+            if (AdmissionClassInput.equalsIgnoreCase("PR") || AdmissionClassInput.equalsIgnoreCase("LPR") || AdmissionClassInput.equalsIgnoreCase("ARC") || AdmissionClassInput.equalsIgnoreCase("PERMANENT RESIDENT")) {
+                AdmissionClass = "PR"; // Assign the correct validation and begin the loop for the Alien Number Entry
+                Admitted = TRUE;
+                ExitDate = null;
+                NotAdmittedReason = null;
+                System.out.println("Enter the Alien Registration Number (A-Number) for the Returning LPR [Format: A#########]:");
+                String inputANumber;
+
+            }else { // All other aliens
+
+            }
+        }
         //AdmittedBoolean IF a person is NOT admitted (FALSE) an Alien Number MUST be entered, along with an ExitDate and DenialReason
         // AlienNumber is set to null if the user leaves it empty/optional.
-        String AlienNumber = null;
-        boolean isANumberValid = false;
 
-        do {
-            System.out.print("Enter Alien Number (ANumber) [Optional - Format: A#########]: ");
-            String inputANumber = scanner.nextLine().trim();
-
-            if (inputANumber.isEmpty()) {
-                // Case 1: Empty/NULL is allowed
-                AlienNumber = null;
-                isANumberValid = true;
-            } else {
-                // Case 2: Check format (A#########)
-                if (!isValidANumberFormat(inputANumber)) {
-                    System.err.println("Invalid format. ANumber must start with 'A' followed by exactly 9 digits (A#########).");
-                    isANumberValid = false;
-                } else {
-                    // Case 3: Format is good, now check database integrity
-                    // Note: checkAlienNumberIntegrity is called statically from Validators
-                    try {
-                        isANumberValid = checkAlienNumberIntegrity(conn, inputANumber, PassportNumber, CountryCode);
-                    } catch (Exception e) {
-                        System.err.println("Database check failed during ANumber validation: " + e.getMessage());
-                        isANumberValid = false;
-                    }
-
-
-                    if (isANumberValid) {
-                        AlienNumber = inputANumber; // Assign only if valid
-                    } else {
-                        // Error message printed inside checkAlienNumberIntegrity or above
-                        System.err.println("Please correct the ANumber or ensure the Passport/CountryCode is correct.");
-                    }
-                }
-            }
-
-        } while (!isANumberValid);
         // ExitDate should be calculated by a Temporary visitor's class automatically, if the admitted flag is FALSE,
             // an override should be triggered for the officer to enter the next available flight for removal.
         //DenialReason should not exceed 255 Chars.
@@ -158,7 +172,7 @@ public class AdmitTraveler {
             System.out.println("  Name: " + GivenName + ", Admission Class: ");
 
             // Call function Admit_New_Traveler
-            CallableStatement cs = conn.prepareCall("{call Admit_New_Traveler(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)}");
+            CallableStatement cs = conn.prepareCall("{call Admit_New_Traveler(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
             cs.setString(1, GivenName);
             cs.setString(2, Surname);
             cs.setString(3, DOB);
@@ -173,7 +187,7 @@ public class AdmitTraveler {
             //cs.setString(12, ArrivalDate);
             //cs.setString(13, AdmissionClass); // All must have an admission class for the sake of entry.
             //cs.setString(14, AdmittedBoolean); // IF FALSE, an AlienNumber must be generated and checked against the DB for uniqueness.
-            cs.setString(15, AlienNumber); // Can be NULL if citizen or certain classes of visas.
+            //cs.setString(15, AlienNumber); // Can be NULL if citizen or certain classes of visas.
             //cs.setString(16, ExitDate); // Can be NULL **IF** Citizen/Permanent Resident/IV Admitted
             //cs.setString(17, DenialReason); // Is null if AdmittedBoolean is TRUE
 
@@ -187,5 +201,47 @@ public class AdmitTraveler {
         } catch (SQLException e) {
             System.err.println("❌ Database Error during Traveler Admission: " + e.getMessage());
         }
+    }
+    private String promptAndValidateAlienNumber(Scanner scanner, Connection conn, String passportNumber, String countryCode) {
+        String AlienNumber = null;
+        boolean isANumberValid = false;
+
+        do {
+            System.out.print("Enter Alien Number (ANumber) [Optional - Format: A#########]: ");
+            String inputANumber = scanner.nextLine().trim();
+
+            if (inputANumber.isEmpty()) {
+                // Case 1: Empty/NULL is allowed
+                AlienNumber = null;
+                isANumberValid = true;
+
+                if (inputANumber && AdmissionClass == "PR"){}
+            } else {
+                // Case 2: Check format (A#########)
+                if (!isValidANumberFormat(inputANumber)) {
+                    System.err.println("Invalid format. ANumber must start with 'A' followed by exactly 9 digits (A#########).");
+                    isANumberValid = false;
+                } else {
+                    // Case 3: Format is good, now check database integrity
+                    try {
+                        // checkAlienNumberIntegrity is static in Validators and handles all DB logic
+                        isANumberValid = checkAlienNumberIntegrity(conn, inputANumber, passportNumber, countryCode);
+                    } catch (Exception e) {
+                        System.err.println("Database check failed during ANumber validation: " + e.getMessage());
+                        isANumberValid = false;
+                    }
+
+                    if (isANumberValid) {
+                        AlienNumber = inputANumber; // Assign only if valid
+                    } else {
+                        // Error message printed inside checkAlienNumberIntegrity or above
+                        System.err.println("Please correct the ANumber or ensure the Passport/CountryCode is correct.");
+                    }
+                }
+            }
+
+        } while (!isANumberValid);
+
+        return AlienNumber;
     }
 }

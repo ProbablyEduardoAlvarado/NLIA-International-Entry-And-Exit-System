@@ -1,0 +1,37 @@
+# Admission Class Codes (Category: [ClassDescription], [IsPermanentResidentClass])
+
+A1 # Ambassador, Public Minister, Career Diplomatic/Consular Officer, FALSE
+A2 # Other Foreign Government Official or Employee, FALSE
+AS # Asylee Status Granted, FALSE
+B1 # Business Visitor, FALSE
+B2 # Tourist Visitor or Medical Treatment, FALSE
+C # Citizen (Used for record identification), FALSE
+C1 # Transit Alien, FALSE
+D # Crewman (Sea or Air), FALSE
+DV # Diversity Visa Lottery Immigrant, TRUE
+E1 # Treaty Trader, FALSE
+E2 # Treaty Investor, FALSE
+EB1 # Employment-Based First Preference (Priority Workers), TRUE
+EB2 # Employment-Based Second Preference (Advanced Degrees), TRUE
+EB3 # Employment-Based Third Preference (Skilled/Other Workers), TRUE
+EB4 # Employment-Based Fourth Preference (Special Immigrants), TRUE
+EB5 # Employment-Based Fifth Preference (Immigrant Investor), TRUE
+F1 # Academic Student, FALSE
+F2A # Second Preference A - Spouses/Children of Permanent Residents, TRUE
+F3 # Third Preference - Married Sons/Daughters of US Citizens, TRUE
+F4 # Fourth Preference - Siblings of US Citizens, TRUE
+H1B # Specialty Occupation Professional, FALSE
+IR1 # Immediate Relative - Spouse of US Citizen, TRUE
+IR2 # Immediate Relative - Child of US Citizen, TRUE
+IR5 # Immediate Relative - Parent of US Citizen, TRUE
+J1 # Exchange Visitor, FALSE
+L1 # Intracompany Transferee, FALSE
+O1 # Extraordinary Ability, FALSE
+PAR # Parolee Status, FALSE
+PR # Lawful Permanent Resident (General Status), TRUE
+ARC # Alien Registration Card Lawful Permanent Resident Alias, TRUE
+LPR # Lawful Permanent Resident Alias, TRUE
+RF # Refugee Status Granted, FALSE
+SB # Returning Resident, TRUE
+TN # NAFTA Professional, FALSE
+VWP # Visa Waiver Program (ESTA), FALSE
