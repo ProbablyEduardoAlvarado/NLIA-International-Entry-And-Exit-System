@@ -2,6 +2,8 @@ package org.example;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.time.LocalDate;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -12,27 +14,59 @@ import java.util.stream.Collectors;
  * */
 public class admissionClasses {
 
-    /** admissionClassValidator()
-     * Used to validate the AdmissionClass list in AdmissionClass.txt and returns a boolean, whether the entered Admission Class
-     * is within the parameter.
+    /**
+     * Set of all valid Admission Class codes.
      */
-
     private static final Set<String> VALID_CODES = new HashSet<>();
+
+    /**
+     * Set of all Admission Class codes that are considered Permanent Resident (Immigrant Visa) classes.
+     * This set is loaded by parsing the 'AdmissionClass.txt' file for entries marked 'TRUE'.
+     */
+    private static final Set<String> PERMANENT_RESIDENT_CLASSES = new HashSet<>();
+
     private static final String RESOURCE_FILE = "AdmissionClass.txt";
 
+
+    // Static initializer block to load data once when the class is loaded
     static {
         try (InputStream is = admissionClasses.class.getClassLoader().getResourceAsStream(RESOURCE_FILE);
              BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
 
-            // Read all lines and collect them into the HashSet for fast lookups
-            VALID_CODES.addAll(reader.lines()
-                    .map(String::trim)
-                    .map(line -> line.split("#")[0].trim()) // FIX: Strip everything after the '#' comment marker
-                    .filter(line -> !line.isEmpty()) // Filter out blank lines after stripping comments
-                    .map(String::toUpperCase)
-                    .collect(Collectors.toSet()));
+            if (is == null) {
+                throw new Exception("Resource file not found: " + RESOURCE_FILE);
+            }
 
-            // NOTE: DEBUG print statement has been moved to printDebugStatus()
+            // Read all lines and process them
+            reader.lines()
+                    .map(String::trim)
+                    .filter(line -> !line.isEmpty() && !line.startsWith("#")) // Skip empty lines and comments
+                    .forEach(line -> {
+                        // Example line format: B1 # Business Visitor, FALSE
+                        // Split by the '#' comment marker
+                        String codeAndStatus = line.split("#")[0].trim();
+
+                        // Split by the comma to get the class code and the permanent status boolean
+                        String[] parts = codeAndStatus.split(", ");
+                        if (parts.length >= 2) {
+                            String classCode = parts[0].trim().toUpperCase();
+                            String isPermanentStr = parts[1].trim(); // Should be TRUE or FALSE
+
+                            if (!classCode.isEmpty()) {
+                                VALID_CODES.add(classCode);
+                            }
+
+                            if ("TRUE".equalsIgnoreCase(isPermanentStr)) {
+                                PERMANENT_RESIDENT_CLASSES.add(classCode);
+                            }
+                        }
+                    });
+
+
+            // Diagnostic check for codes loaded
+            System.out.println("DEBUG: Loaded " + VALID_CODES.size() + " Admission Class codes.");
+            System.out.println("DEBUG: Loaded " + PERMANENT_RESIDENT_CLASSES.size() + " Permanent Resident codes.");
+
 
         } catch (Exception e) {
             System.err.println("FATAL: Could not load Admission Class codes from " + RESOURCE_FILE);
@@ -40,16 +74,11 @@ public class admissionClasses {
         }
     }
 
-    /**
-     * Prints the current status of the loaded Admission Class codes.
-     * Call this method explicitly to control the timing of the debug message.
+
+    /** admissionClassValidator()
+     * Used to validate the AdmissionClass list in AdmissionClass.txt and returns a boolean, whether the entered Admission Class
+     * is within the parameter.
      */
-    public static void printDebugStatus() {
-        // Calling this method forces the static block above to run first, then prints the status.
-        System.out.println("DEBUG: Loaded " + VALID_CODES.size() + " Admission Class codes.");
-    }
-
-
     public static boolean admissionClassValidator(String code) {
         if (code == null || code.trim().isEmpty()) {
             return false;
@@ -58,25 +87,68 @@ public class admissionClasses {
         return VALID_CODES.contains(code.toUpperCase());
     }
 
-    /** admissionClassExitDate()
-     * ExitDate will be calculated after the Admission Code is entered into the validator.
-     * As a method, the validated Admission Code and the date of attempted entry will be switched to a specific case to
-     *  determine the Maximum allowed date under that specific class of admission
-     * @
+    /**
+     * Returns an unmodifiable set of all Admission Class codes that indicate a Permanent Resident status.
+     * This is used by other classes (like AdmitTraveler) to enforce ANumber entry requirements.
+     * @return Set of Permanent Resident class codes.
      */
-    private String admissionClassExitDate(String ArrivalDate, String AdmissionClass){
-        switch (AdmissionClass){
-            // First will load the nulls for Permanent Resident Classes/Citizens/Immigrant Visas.
-            // 'C' Citizens will skip this method catching as they will have their ExitDate immediately set to NULL.
-            case "DV","EB1","EB2","EB3","EB4","EB5","F2A","F3","F4","IR1","IR2","IR5","PR","ARC","LPR","SB":{
+    public static Set<String> getPermanentResidentClasses() {
+        return Collections.unmodifiableSet(PERMANENT_RESIDENT_CLASSES);
+    }
 
-            }
-            // Aliens permitted to reside until their duration of status (D/S) expires.
-            // Heavily...heavily resist using NULLs for classes other than Permanent residents/IVs/Citizens
-            // Give general discretion for Students (for the sake of this simulation, will default to 4 years+1 month grace)
-            case "A1":
 
+    /** admissionClassExitDate()
+     * Calculates the maximum allowed Exit Date based on the Admission Class and Arrival Date.
+     * @param ArrivalDate The date of entry (YYYY-MM-DD).
+     * @param AdmissionClass The class of admission code.
+     * @return The calculated Exit Date (YYYY-MM-DD) or null for permanent residents/citizens.
+     */
+    public static String admissionClassExitDate(String ArrivalDate, String AdmissionClass){
+
+        // The classes in this set should have a NULL ExitDate.
+        if (getPermanentResidentClasses().contains(AdmissionClass) || AdmissionClass.equals("C")) {
+            return null;
         }
-        return ExitDate;
+
+        LocalDate arrival = LocalDate.parse(ArrivalDate);
+        LocalDate exitDate = null;
+
+        // Ensure the code is uppercase for the switch statement
+        String upperCaseClass = AdmissionClass.toUpperCase();
+
+        switch (upperCaseClass){
+            // Non-Resident aliens and tourists
+            case "B1", "B2":
+                // MAX 6 month stay (180 days)
+                exitDate = arrival.plusDays(180);
+                break;
+            case "VWP":
+                // Visa Waiver Program 90 Days
+                exitDate = arrival.plusDays(90);
+                break;
+            case "C1", "D":
+                // Transit Visa / Air/Seacrew. 
+                exitDate = arrival.plusDays(29);
+                break;
+            case "F1":
+                // Academic Student - Duration of Status (D/S). For simulation, give a long date.
+                exitDate = arrival.plusYears(4).plusMonths(1); // 4 years + 1 month grace
+                break;
+            // All other non-immigrant codes not specifically handled above, default to a standard visitor max.
+            case "A1", "A2", "AS", "E1", "E2", "H1B", "J1", "L1", "O1", "PAR", "RF", "TN":
+                exitDate = arrival.plusDays(365);
+                break;
+            default:
+                // Fallback for codes not fully defined
+                System.err.println("WARNING: Admission Class " + AdmissionClass + " has no defined Exit Date rule. Defaulting to 1 day.");
+                exitDate = arrival.plusDays(1);
+        }
+
+        // Return date in YYYY-MM-DD format
+        return exitDate != null ? exitDate.toString() : null;
+    }
+
+    public static void printDebugStatus() {
+
     }
 }

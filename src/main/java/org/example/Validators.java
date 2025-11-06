@@ -11,7 +11,10 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.HashSet;
+import java.util.Scanner;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 
@@ -20,20 +23,20 @@ import java.util.stream.Collectors;
  */
 public class Validators {
 
-
-    /** isValidCode()
-     * Used to validate the CountryCodes list in country_codes.txt and returns a boolean, whether the entered CountryCode
-     * is within the parameter.  If it is FALSE, it will order the officer to repeat the task.  Can also be used
-     * in validating other Country use applications to ensure a clean reference to the Database list of CountryCodes.
-     * Assists in performance by not requiring a query of the DB to ensure the CountryCode is in the correct format.
-     */
+    // --- Country Code Validator Logic (Pre-loaded from resource file) ---
 
     private static final Set<String> VALID_CODES = new HashSet<>();
+    // NOTE: This resource file must be placed in src/main/resources/country_codes.txt
     private static final String RESOURCE_FILE = "country_codes.txt";
 
     static {
         try (InputStream is = Validators.class.getClassLoader().getResourceAsStream(RESOURCE_FILE);
              BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+
+            if (is == null) {
+                // If the resource is not found, throw an exception to halt startup
+                throw new Exception("Resource file not found: " + RESOURCE_FILE);
+            }
 
             // Read all lines and collect them into the HashSet for fast lookups
             VALID_CODES.addAll(reader.lines()
@@ -42,12 +45,28 @@ public class Validators {
                     .collect(Collectors.toSet()));
 
         } catch (Exception e) {
-            // Handle error, e.g., if the file isn't found
             System.err.println("FATAL: Could not load country codes from " + RESOURCE_FILE);
             e.printStackTrace();
         }
     }
 
+
+    /**
+     * Checks if the given string contains only letters (A-Z, a-z) and spaces.
+     * Used primarily for name validation.
+     * @param s The string to validate.
+     * @return true if the string contains only letters and spaces, false otherwise.
+     */
+    public static boolean containsOnlyLetters(String s) {
+        // Allow letters (uppercase and lowercase) and spaces, and ensure it's not empty
+        return s != null && s.trim().length() > 0 && s.matches("^[a-zA-Z\\s]+$");
+    }
+
+    /**
+     * Validates a 3-character ISO country code against the pre-loaded list.
+     * @param code The 3-character country code to validate.
+     * @return true if the code is valid, false otherwise.
+     */
     public static boolean isValidCode(String code) {
         if (code == null || code.length() != 3) {
             return false;
@@ -56,76 +75,150 @@ public class Validators {
         return VALID_CODES.contains(code.toUpperCase());
     }
 
-
-    /** containsOnlyLetters()
-     * Checks if a string contains only letters and spaces.
-     * @param str The string to validate.
-     * @return true if the string is non-empty and contains only valid characters, false otherwise.
+    /**
+     * Validates if a date string is in the format YYYY-MM-DD.
+     * @param dateString The date string to validate.
+     * @return true if the format is correct, false otherwise.
      */
-    public static boolean containsOnlyLetters(String str) {
-        if (str == null || str.trim().isEmpty()) {
-            return false; // Reject empty or null strings
-        }
-
-        // Check every character in the string
-        for (char c : str.toCharArray()) {
-            // Allow letters (a-z, A-Z) and spaces
-            if (!Character.isLetter(c) && c != ' ') {
-                return false; // Found a character that is NOT a letter and NOT a space (like a number)
-            }
-        }
-        return true; // All characters passed the check
-    }
-
-    /** isValidDate()
-     * Validates a string input against the 'YYYY-MM-DD' date format.
-     * @param dateStr The date string to check.
-     * @return true if the date is valid and in the correct format, false otherwise.
-     */
-    public static boolean isValidDate(String dateStr) {
-        // Check for null or empty string first
-        if (dateStr == null || dateStr.trim().isEmpty()) {
+    public static boolean isValidDate(String dateString) {
+        if (dateString == null) {
             return false;
         }
-
-        // Define the specific format required (DD for day, MM for month, YYYY for year)
-        // Note: The format to be enforced (YYYY-MM-DD) is used here.
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-
         try {
-            // Attempt to parse the date. This checks format AND validity (e.g., no Feb 30)
-            LocalDate.parse(dateStr, formatter);
+            // Attempt to parse the date using the expected format
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+            LocalDate.parse(dateString, formatter);
             return true;
         } catch (DateTimeParseException e) {
-            // Parsing failed (either bad format or invalid date)
             return false;
         }
     }
+    // --- Public Mandatory/Optional Methods ---
 
-    /** isValidANumberFormat()
-     * Validates that the Alien Number (ANumber) follows the format A######### (A followed by 9 digits).
-     * @param aNumber The Alien Number string to validate.
+    /**
+     * Prompts the user for an A-Number. The entry is MANDATORY and cannot be left blank.
+     * The input must conform to the A######### format and pass integrity checks.
+     * * @param scanner The Scanner object for user input.
+     * @param conn A mock database connection for integrity checks.
+     * @param passportNumber The related passport number for integrity check context.
+     * @param countryCode The related country code for integrity check context.
+     * @return The validated Alien Number string.
+     * @throws SQLException If a database error occurs during the integrity check.
+     */
+    public static String getAlienNumberMandatory(Scanner scanner, Connection conn, String passportNumber, String countryCode) throws SQLException {
+        String AlienNumber = null;
+        boolean isValid = false;
+
+        do {
+            System.out.print("Enter Alien Number (A#########) - MANDATORY: ");
+            String input = scanner.nextLine().trim();
+
+            if (input.isEmpty()) {
+                System.err.println("Error: Alien Number is mandatory and cannot be left blank.\n");
+                continue; // Loop again, as input is required
+            }
+
+            // Case 1: Check format (A#########)
+            if (!isValidANumberFormat(input)) {
+                System.err.println("Invalid format. ANumber must start with 'A' followed by exactly 9 digits (A#########).\n");
+                isValid = false;
+            } else {
+                // Case 2: Format is good, now check database integrity
+                try {
+                    isValid = checkAlienNumberIntegrity(conn, input, passportNumber, countryCode);
+                } catch (SQLException e) {
+                    // Re-throw the database error to the caller
+                    throw e;
+                }
+
+                if (isValid) {
+                    AlienNumber = input; // Assign only if valid
+                } else {
+                    // Error message printed inside checkAlienNumberIntegrity or the next line
+                    System.err.println("Integrity check failed. Please verify the ANumber against the provided Passport/CountryCode.\n");
+                }
+            }
+
+        } while (!isValid);
+
+        return AlienNumber;
+    }
+
+    /**
+     * Prompts the user for an A-Number. The entry is OPTIONAL and can be left blank.
+     * If entered, the input must conform to the A######### format and pass integrity checks.
+     * * @param scanner The Scanner object for user input.
+     * @param conn A mock database connection for integrity checks.
+     * @param passportNumber The related passport number for integrity check context.
+     * @param countryCode The related country code for integrity check context.
+     * @return The validated Alien Number string, or null if the user left it blank.
+     * @throws SQLException If a database error occurs during the integrity check.
+     */
+    public String getAlienNumberOptional(Scanner scanner, Connection conn, String passportNumber, String countryCode) throws SQLException {
+        String AlienNumber = null;
+        boolean isValid = false;
+
+        do {
+            System.out.print("Enter Alien Number (A#########) or leave blank if not applicable (OPTIONAL): ");
+            String input = scanner.nextLine().trim();
+
+            if (input.isEmpty()) {
+                // Case 1: Optional, and user entered nothing
+                return null; // Exit the loop and return null
+            }
+
+            // Case 2: Check format (A#########)
+            if (!isValidANumberFormat(input)) {
+                System.err.println("Invalid format. ANumber must start with 'A' followed by exactly 9 digits (A#########).\n");
+                isValid = false;
+            } else {
+                // Case 3: Format is good, now check database integrity
+                try {
+                    isValid = checkAlienNumberIntegrity(conn, input, passportNumber, countryCode);
+                } catch (SQLException e) {
+                    // Re-throw the database error to the caller
+                    throw e;
+                }
+
+                if (isValid) {
+                    AlienNumber = input; // Assign only if valid
+                } else {
+                    System.err.println("Integrity check failed. Please verify the ANumber against the provided Passport/CountryCode.\n");
+                }
+            }
+
+        } while (!isValid);
+
+        return AlienNumber;
+    }
+    /**
+     * Validates the format of an Alien Number (A#########).
+     * It must start with 'A' followed by exactly 9 digits.
+     * @param aNumber The string to validate.
      * @return true if the format is correct, false otherwise.
      */
     public static boolean isValidANumberFormat(String aNumber) {
-        // The regex pattern is: start of string (^), letter 'A', exactly 9 digits (\d{9}), end of string ($).
-        return aNumber.matches("^A\\d{9}$");
+        if (aNumber == null || aNumber.trim().isEmpty()) {
+            return false;
+        }
+        // Regex: Starts with 'A', followed by exactly 9 digits. Case-insensitive.
+        return aNumber.trim().toUpperCase().matches("^A\\d{9}$");
     }
 
-
-    /** checkAlienNumberIntegrity()
-     * Checks for database integrity regarding the Alien Number (ANumber).
-     * NOTE: This method is now STATIC to allow easy access via static import.
+    /**
+     * Checks if a given ANumber is valid and not already assigned to a different passport record.
+     * This is a crucial integrity check.
      * @param conn The active database connection.
-     * @param aNumber The Alien Number entered by the user.
+     * @param aNumber The Alien Number (A#########) to check.
      * @param passportNumber The traveler's Passport Number.
-     * @param countryCode The traveler's Passport Country Code.
-     * @return true if the ANumber is valid for this person (or not yet claimed), false if it conflicts with another person's record.
+     * @param countryCode The traveler's Country Code.
+     * @return true if the ANumber is valid for this passport or new; false if conflict is found.
+     * @throws SQLException if a database access error occurs.
      */
-    public static boolean checkAlienNumberIntegrity(Connection conn, String aNumber, String passportNumber, String countryCode) {
-        // If no ANumber is provided, no DB validation is required (it's NULL)
-        if (aNumber == null || aNumber.trim().isEmpty()) {
-            return true;
+    public static boolean checkAlienNumberIntegrity(Connection conn, String aNumber, String passportNumber, String countryCode) throws SQLException {
+        if (conn == null) {
+            System.err.println("Database connection is null during ANumber integrity check.");
+            return false;
         }
 
         // SQL Query: Check for a record that has the entered ANumber BUT a DIFFERENT passport combination.
@@ -153,9 +246,8 @@ public class Validators {
             return true; // Validation Passed
 
         } catch (SQLException e) {
-            System.err.println("Database error during ANumber validation: " + e.getMessage());
-            // For safety, assume failure if the database check fails
-            return false;
+            // Re-throw the SQLException to allow the calling method (AdmitTraveler) to handle the exception gracefully
+            throw e;
         }
     }
 }
