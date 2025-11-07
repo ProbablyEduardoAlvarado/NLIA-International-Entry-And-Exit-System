@@ -211,6 +211,8 @@ public class AdmitTraveler {
                 } catch (SQLException e) {
                     System.err.println("Database error during Alien Number validation: " + e.getMessage());
                     throw new RuntimeException(e);
+                }if (AlienNumber != null) {
+                    AlienNumber = "A" + AlienNumber;
                 }
 
             } else { // All other non-immigrant aliens, Review Admissibility and admit or deny
@@ -242,8 +244,10 @@ public class AdmitTraveler {
                             System.err.println("Database error during Alien Number validation: " + e.getMessage());
                             throw new RuntimeException(e);
                         }
-
-                    } else { // Non-immigrant (B1, B2, etc.) admission
+                            // *** INSERT SNIPPET HERE (New Line 203) ***
+                        if (AlienNumber != null) {
+                            AlienNumber = "A" + AlienNumber;
+                        }
 
                         // 14. Calculate Max Exit Date (Initial ExitDate)
                         ExitDate = admissionClassExitDate(ArrivalDate, AdmissionClass);
@@ -416,7 +420,7 @@ public class AdmitTraveler {
             //cs.execute();
 
             if (conn.isValid(1)) {
-                System.out.println("✅ Success: Traveler '" + GivenName + " " + Surname + "' admitted successfully!");
+                System.out.println("✅ Success: Traveler '" + GivenName + " " + Surname + "' recorded successfully!");
             }
 
         } catch (SQLException e) {

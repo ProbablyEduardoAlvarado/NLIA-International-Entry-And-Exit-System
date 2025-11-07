@@ -99,8 +99,8 @@ public class Validators {
      */
     public static String generateNextANumber(Connection conn) throws SQLException {
         // Find the maximum ANumber, convert it to a number, and then find the maximum.
-        String sql = "SELECT MAX(CAST(\"ANumber\" AS BIGINT)) FROM PUBLIC.\"Person\" WHERE \"ANumber\" IS NOT NULL";
-        long maxANumber = 562615698; // Start at a safe, high number if no A-Numbers exist
+        String sql = "SELECT MAX(CAST(SUBSTRING(\"ANumber\" FROM 2) AS BIGINT)) FROM PUBLIC.\"Person\" WHERE \"ANumber\" IS NOT NULL AND \"ANumber\" LIKE 'A%'";
+        long maxANumber = 999999999; // Start at a safe, high number if no A-Numbers exist
 
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -112,9 +112,13 @@ public class Validators {
                 // If the table is empty or ANumber column is all null, start at the default.
                 System.out.println("No existing A-Numbers found. Starting generation at: " + maxANumber);
             }
-        } catch (SQLException e) {
-            System.err.println("Error generating next A-Number. Using fallback: " + maxANumber);
-            // Log the error but continue with the fallback number to avoid stopping the process.
+        }  catch (SQLException e) {
+        // Log the detailed database error
+        System.err.println("❌ Error Generating next A Number.");
+        System.err.println("  > SQL State: " + e.getSQLState());
+        System.err.println("  > Error Code: " + e.getErrorCode());
+        System.err.println("  > Database Message: " + e.getMessage()); // <-- This is the key piece of information!
+        throw e;
         }
 
         // Return the new number formatted as a string
@@ -191,7 +195,7 @@ public class Validators {
         // If not valid (either empty, invalid format, or conflicted), generate a new one
         if (!isValid) {
             alienNumber = generateNextANumber(conn);
-            System.out.println("✅ Automatically generated new A-Number: " + alienNumber);
+            System.out.println("✅ Automatically generated new A-Number: A" + alienNumber);
         }
 
         return alienNumber;

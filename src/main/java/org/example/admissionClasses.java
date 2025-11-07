@@ -42,15 +42,23 @@ public class admissionClasses {
                     .map(String::trim)
                     .filter(line -> !line.isEmpty() && !line.startsWith("#")) // Skip empty lines and comments
                     .forEach(line -> {
-                        // Example line format: B1 # Business Visitor, FALSE
-                        // Split by the '#' comment marker
+                        // The line structure is: CODE # Description, STATUS
+
+                        // 1. Get the part before the '#' (e.g., "VWP # Visa Waiver Program (ESTA), FALSE" -> "VWP ")
                         String codeAndStatus = line.split("#")[0].trim();
 
-                        // Split by the comma to get the class code and the permanent status boolean
-                        String[] parts = codeAndStatus.split(", ");
-                        if (parts.length >= 2) {
-                            String classCode = parts[0].trim().toUpperCase();
-                            String isPermanentStr = parts[1].trim(); // Should be TRUE or FALSE
+                        // 2. Split by the comma (',') to separate the code from the status (e.g., "VWP " -> ["VWP", ""])
+                        // This assumes the file format is strictly "CODE , STATUS" - but the actual file uses "CODE # Desc, STATUS"
+
+                        // Let's re-evaluate the actual file content to find a reliable split.
+                        // The file: "DV # Diversity Visa Lottery Immigrant, TRUE"
+
+                        // A safer split is to find the *last* comma, which separates the description from the status.
+                        int lastCommaIndex = codeAndStatus.lastIndexOf(',');
+
+                        if (lastCommaIndex != -1) {
+                            String classCode = codeAndStatus.substring(0, lastCommaIndex).trim().toUpperCase();
+                            String isPermanentStr = codeAndStatus.substring(lastCommaIndex + 1).trim();
 
                             if (!classCode.isEmpty()) {
                                 VALID_CODES.add(classCode);
@@ -58,6 +66,30 @@ public class admissionClasses {
 
                             if ("TRUE".equalsIgnoreCase(isPermanentStr)) {
                                 PERMANENT_RESIDENT_CLASSES.add(classCode);
+                            }
+                        } else {
+                            // Handle cases like "A1 # Ambassador..." where there is no comma before the #
+                            // The actual file has "A1 # Ambassador, Public Minister, Career Diplomatic/Consular Officer, FALSE"
+                            // A better approach is to simply split the whole line by comma, and use the first and last parts.
+
+                            String[] parts = line.split(",");
+                            if (parts.length >= 2) {
+                                // First part is the code/description: "A1 # Ambassador, Public Minister, Career Diplomatic/Consular Officer"
+                                String firstPart = parts[0];
+
+                                // Last part is the status: " FALSE"
+                                String isPermanentStr = parts[parts.length - 1].trim();
+
+                                // Extract the code from the first part (before the '#')
+                                String classCode = firstPart.split("#")[0].trim().toUpperCase();
+
+                                if (!classCode.isEmpty()) {
+                                    VALID_CODES.add(classCode);
+                                }
+
+                                if ("TRUE".equalsIgnoreCase(isPermanentStr)) {
+                                    PERMANENT_RESIDENT_CLASSES.add(classCode);
+                                }
                             }
                         }
                     });
