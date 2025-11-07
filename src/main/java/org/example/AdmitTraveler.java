@@ -1,12 +1,12 @@
 package org.example;
 import java.sql.*;
 import java.time.LocalDate;
+import java.util.Objects;
 import java.util.Scanner;
 
 import static java.lang.Boolean.TRUE;
 import static org.example.Validators.*;
-import static org.example.admissionClasses.admissionClassValidator;
-import static org.example.admissionClasses.admissionClassExitDate;
+import static org.example.admissionClasses.*;
 
 
 /**
@@ -35,7 +35,7 @@ public class AdmitTraveler {
         String OriginAirport;
         String ArrivalDate;
         String AdmissionClass = "";
-        String AlienNumber; // Declared here for function scope
+        String AlienNumber = ""; // Declared here for function scope
 
         int length;
 
@@ -159,8 +159,8 @@ public class AdmitTraveler {
         //have their exit date calculated.
         String AdmissionClassInput;
         boolean Admitted;
-        String ExitDate;
-        String NotAdmittedReason;
+        String ExitDate = null; // Initialize here
+        String NotAdmittedReason = null; // Initialize here
 
         /*
          * Now that the required documentation of ALL arriving passengers are entered the admission process can
@@ -171,7 +171,7 @@ public class AdmitTraveler {
          * ExitDate = NULL
          * NotAdmittedReason = NULL
          * */
-        if (CountryCode.equalsIgnoreCase("USA")){
+        if (CountryCode.equalsIgnoreCase("USA")) {
             AlienNumber = null;
             AdmissionClass = "C";
             Admitted = true;
@@ -180,32 +180,41 @@ public class AdmitTraveler {
 
             // All other Arrivals will be subjected to the Admissions Process and validation requirements for all
             // arrivals through a do-while loop.
-        }else { // Returning Permanent Residents (Green Card Holders) 'PR' Class, will receive expedited validation
+        } else { // Returning Permanent Residents (Green Card Holders) 'PR' Class, will receive expedited validation
             admissionClasses.printDebugStatus(); // Temporary Debug statement ensuring the AdmissionClasses have been parsed.
             boolean isAdmissionClassValid;
             System.out.println("Enter the Admission Class of the Arriving Alien \nReturning Permanent Residents may be coded as 'PR'/'ARC'/'LPR");
             do {
                 AdmissionClassInput = scanner.nextLine();
                 isAdmissionClassValid = admissionClassValidator(AdmissionClassInput);
-                if(!isAdmissionClassValid){
+                if (!isAdmissionClassValid) {
                     System.err.println("The Admission Class is NOT VALID.  Enter a valid Class of Admission.");
                 }
             } while (!isAdmissionClassValid);
-            if (AdmissionClassInput.equalsIgnoreCase("PR") || AdmissionClassInput.equalsIgnoreCase("LPR") || AdmissionClassInput.equalsIgnoreCase("ARC") || AdmissionClassInput.equalsIgnoreCase("PERMANENT RESIDENT")) {
-                AdmissionClass = "PR"; // Assign the correct validation and begin the loop for the Alien Number Entry
+
+            // Reassign Admission Class to the validated input
+            AdmissionClass = AdmissionClassInput.toUpperCase();
+
+            // Check if PR/LPR/ARC (special Permanent Resident return codes) OR if it's a known Immigrant Visa (like EB1)
+            if (AdmissionClass.equalsIgnoreCase("PR") || AdmissionClass.equalsIgnoreCase("LPR") || AdmissionClass.equalsIgnoreCase("ARC") || getPermanentResidentClasses().contains(AdmissionClass)) {
+
+                if (AdmissionClass.equalsIgnoreCase("PR") || AdmissionClass.equalsIgnoreCase("LPR") || AdmissionClass.equalsIgnoreCase("ARC")) {
+                    AdmissionClass = "PR"; // Simplify special codes to 'PR'
+                }
+
                 Admitted = true;
                 ExitDate = null;
                 NotAdmittedReason = null;
+
                 try {
-                    AlienNumber = Validators.getAlienNumberMandatory(scanner, conn, PassportNumber, CountryCode);
+                    AlienNumber = getAlienNumberMandatory(scanner, conn, PassportNumber, CountryCode);
                 } catch (SQLException e) {
                     System.err.println("Database error during Alien Number validation: " + e.getMessage());
-
                     throw new RuntimeException(e);
                 }
 
+            } else { // All other non-immigrant aliens, Review Admissibility and admit or deny
 
-            }else { // All other aliens, Review Admissibility and admit or deny
                 System.out.print("Will the alien be admitted? Enter TRUE OR FALSE");
                 // Loop until a valid boolean is entered
                 while (!scanner.hasNextBoolean()) {
@@ -215,32 +224,169 @@ public class AdmitTraveler {
                 // Once validated, read the boolean value
                 Admitted = scanner.nextBoolean();
 
-                if(Admitted){ // The Traveler is Admitted and now the ExitDate is calculated.
-                    admissionClassValidator(AdmissionClass);
+                // Consume the leftover newline from nextBoolean()
+                scanner.nextLine();
 
-                }else {
+                if (Admitted) { // The Traveler is Admitted and now the ExitDate is calculated.
 
+                    boolean ImmigrantVisaHolder = admissionClassExitDate(ArrivalDate, AdmissionClass) == null;
+
+                    if (ImmigrantVisaHolder) {
+                        ExitDate = null;
+                        NotAdmittedReason = null;
+                        System.out.println("The Immigrant Visa Presented is a " + AdmissionClass + " Visa. \nEnter the Alien Registration Number: ");
+
+                        try {
+                            AlienNumber = getAlienNumberMandatory(scanner, conn, PassportNumber, CountryCode);
+                        } catch (SQLException e) {
+                            System.err.println("Database error during Alien Number validation: " + e.getMessage());
+                            throw new RuntimeException(e);
+                        }
+
+                    } else { // Non-immigrant (B1, B2, etc.) admission
+
+                        // 14. Calculate Max Exit Date (Initial ExitDate)
+                        ExitDate = admissionClassExitDate(ArrivalDate, AdmissionClass);
+                        String MaxExitDate = ExitDate; // Store the maximum allowed date
+
+                        LocalDate maxDate = LocalDate.parse(MaxExitDate); // Convert max date string to LocalDate
+
+                        String adjustmentDecision;
+                        System.out.println("The Maximum Stay permitted is until " + MaxExitDate);
+
+                        do {
+                            System.out.print("Adjust the Exit Date permitted? (Y/N): ");
+                            adjustmentDecision = scanner.nextLine().trim().toUpperCase();
+                            if (!adjustmentDecision.equals("Y") && !adjustmentDecision.equals("N")) {
+                                System.err.println("INVALID INPUT. Enter Y or N.\n");
+                            }
+                        } while (!adjustmentDecision.equals("Y") && !adjustmentDecision.equals("N"));
+
+                        if (adjustmentDecision.equals("Y")) {
+                            // If 'Y', prompt for a new, valid date, ensuring it is not after the MAX date.
+                            String newExitDate;
+                            LocalDate newDate;
+                            boolean isValid = false;
+
+                            do {
+                                System.out.print("Enter New Exit Date (YYYY-MM-DD). Must be on or before " + MaxExitDate + ": ");
+                                newExitDate = scanner.nextLine();
+
+                                if (!isValidDate(newExitDate)) {
+                                    System.err.println("Invalid format. Date must be in YYYY-MM-DD format.\n");
+                                    continue; // Continue do-while to re-prompt
+                                }
+
+                                newDate = LocalDate.parse(newExitDate);
+
+                                // Check if the new date is AFTER the maximum allowed date
+                                if (newDate.isAfter(maxDate)) { // Validation Logic
+                                    System.err.println("REJECTED: The adjusted date (" + newExitDate + ") is AFTER the maximum permitted stay (" + MaxExitDate + "). Please enter an earlier date.");
+                                } else {
+                                    // Date is valid, exit the loop
+                                    isValid = true;
+                                }
+
+                            } while (!isValid);
+
+                            ExitDate = newExitDate; // Assign the validated, adjusted date
+
+                        }
+
+                        // Alien Number is optional for admitted non-immigrants
+                        try {
+                            AlienNumber = getAlienNumberOptional(scanner, conn, PassportNumber, CountryCode);
+                        } catch (SQLException e) {
+                            System.err.println("Database error during Alien Number validation: " + e.getMessage());
+                            throw new RuntimeException(e);
+                        }
+                    }
+
+                } else { // Admission Denied
+
+                    // If denied, must get an A-Number and a reason for denial.
+                    System.out.println("Alien MUST enter an A-Number when denied admission.");
+                    try {
+                        // Denied aliens must enter an A-Number
+                        AlienNumber = getAlienNumberMandatory(scanner, conn, PassportNumber, CountryCode);
+                    } catch (SQLException e) {
+                        System.err.println("Database error during Alien Number validation: " + e.getMessage());
+                        throw new RuntimeException(e);
+                    }
+
+                    System.out.print("Enter Reason for Denial (Max 255 chars): ");
+                    NotAdmittedReason = scanner.nextLine();
+                    if(NotAdmittedReason.length() > 255) {
+                        NotAdmittedReason = NotAdmittedReason.substring(0, 255); // Truncate if too long
+                    }
+
+                    // If denied, prompt for a new exit date (removal date)
+                    String denialExitDate;
+                    do {
+                        System.out.print("Enter Removal Date (YYYY-MM-DD - required for denied entry): ");
+                        denialExitDate = scanner.nextLine();
+                        if (!isValidDate(denialExitDate)) {
+                            System.err.println("Invalid input. Date must be in YYYY-MM-DD format.\n");
+                        }
+                    } while (!isValidDate(denialExitDate));
+                    ExitDate = denialExitDate;
                 }
             }
         }
-        //AdmittedBoolean IF a person is NOT admitted (FALSE) an Alien Number MUST be entered, along with an ExitDate and DenialReason
-        // AlienNumber is set to null if the user leaves it empty/optional.
 
-        // ExitDate should be calculated by a Temporary visitor's class automatically, if the admitted flag is FALSE,
-        // an override should be triggered for the officer to enter the next available flight for removal.
-        //DenialReason should not exceed 255 Chars.
-
-        // --- 13. Alien Number ---
-
-
-        // --- 14. Calculated Exit Date ---
-        ExitDate = admissionClassExitDate(ArrivalDate, AdmissionClass);
+        // --- Final Processing & SQL Execution (Moved outside admission IF/ELSE for consistent execution) ---
 
         // List the prepared traveler record.
         System.out.println("----- Traveler Details ----- \n" +
-                "Name:" + Surname + ", " + GivenName+" | DOB" + DOB +
-                "\nCitizen of " + CountryCode +" | Passport No. " + PassportNumber + " | Issue Date: " + PassportIssueDate + " | Expiry: "+PassportExpiry
-                + "\n----- Flight Details -----\n");
+                "Name:" + Surname + ", " + GivenName + " | DOB" + DOB +
+                "\nCitizen of " + CountryCode + " | Passport No. " + PassportNumber + " | Issue Date: " + PassportIssueDate + " | Expiry: " + PassportExpiry
+                + "\n----- Flight Details -----\n" +
+                "Flight: " + AirlineCode + FlightNumber + " | [" + OriginAirport + ", " + FlightCountryCode + "] -> EWR | " + ArrivalDate +
+                "\n----- Admission Details -----");
+
+        switch (AdmissionClass) {
+            case "C": {
+                System.out.println("ADMITTED CITIZEN");
+                break;
+            }
+            // Immigrant/Permanent Resident classes
+            case "PR":
+            case "EB1":
+            case "DV":
+            case "EB2":
+            case "EB3":
+            case "EB4":
+            case "EB5":
+            case "F2A":
+            case "F3":
+            case "F4":
+            case "IR1":
+            case "IR2":
+            case "IR5":
+            case "SB": {
+                System.out.println("ADMITTED IMMIGRANT/PERMANENT RESIDENT");
+                System.out.println("Class: " + AdmissionClass);
+                System.out.println("A-Number: " + AlienNumber);
+                break;
+            }
+            default: {
+                if (Admitted) {
+                    System.out.println("ADMITTED NON-IMMIGRANT: CLASS " + AdmissionClass);
+                    System.out.println("Exit Date: " + ExitDate);
+                    if (AlienNumber != null && !AlienNumber.isEmpty()) {
+                        System.out.println("A-Number: " + AlienNumber);
+                    }
+                } else {
+                    System.out.println("DENIED ADMISSION: CLASS " + AdmissionClass);
+                    System.out.println("Reason: " + NotAdmittedReason);
+                    System.out.println("A-Number: " + AlienNumber);
+                    System.out.println("Removal Date: " + ExitDate);
+                }
+                break;
+            }
+        }
+
+
         // --- SQL Execution ---
         try {
             System.out.println("\n--- Submitting New Traveler Record ---");
@@ -261,10 +407,11 @@ public class AdmitTraveler {
             cs.setString(11, FlightCountryCode);
             cs.setString(12, ArrivalDate);
             cs.setString(13, AdmissionClass);
-            //cs.setString(14, Admitted);
-            //cs.setObject(15, AlienNumber, Types.VARCHAR); // Use setObject for potential NULL value
-            cs.setObject(16, ExitDate, Types.DATE);       // Use setObject for potential NULL value
-            //cs.setObject(17, DenialReason, Types.VARCHAR);
+            cs.setBoolean(14, Admitted);
+            cs.setObject(15, AlienNumber, Types.VARCHAR);
+            cs.setObject(16, ExitDate, Types.DATE);
+            cs.setObject(17, NotAdmittedReason, Types.VARCHAR);
+
 
             //cs.execute();
 
@@ -278,7 +425,6 @@ public class AdmitTraveler {
             System.err.println("Error Message: " + e.getMessage());
         }
     }
-
 
 
     /**
@@ -296,6 +442,4 @@ public class AdmitTraveler {
         } while (!admissionClassValidator(AdmissionClass));
         return AdmissionClass;
     }
-
-
 }

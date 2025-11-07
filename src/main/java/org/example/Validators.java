@@ -38,196 +38,111 @@ public class Validators {
                 throw new Exception("Resource file not found: " + RESOURCE_FILE);
             }
 
-            // Read all lines and collect them into the HashSet for fast lookups
-            VALID_CODES.addAll(reader.lines()
+            // Read all lines and process them
+            reader.lines()
                     .map(String::trim)
-                    .map(String::toUpperCase)
-                    .collect(Collectors.toSet()));
+                    .filter(line -> !line.isEmpty())
+                    .forEach(VALID_CODES::add);
 
         } catch (Exception e) {
-            System.err.println("FATAL: Could not load country codes from " + RESOURCE_FILE);
-            e.printStackTrace();
+            // Print error and ensure the set is empty to prevent invalid input acceptance
+            System.err.println("FATAL: Could not load country codes from " + RESOURCE_FILE + ": " + e.getMessage());
         }
     }
 
-
     /**
-     * Checks if the given string contains only letters (A-Z, a-z) and spaces.
-     * Used primarily for name validation.
-     * @param s The string to validate.
-     * @return true if the string contains only letters and spaces, false otherwise.
-     */
-    public static boolean containsOnlyLetters(String s) {
-        // Allow letters (uppercase and lowercase) and spaces, and ensure it's not empty
-        return s != null && s.trim().length() > 0 && s.matches("^[a-zA-Z\\s]+$");
-    }
-
-    /**
-     * Validates a 3-character ISO country code against the pre-loaded list.
-     * @param code The 3-character country code to validate.
-     * @return true if the code is valid, false otherwise.
+     * Checks if the given 3-letter code is in the set of valid country codes.
      */
     public static boolean isValidCode(String code) {
-        if (code == null || code.length() != 3) {
-            return false;
-        }
-        // Look up the uppercase version for case-insensitive checking
-        return VALID_CODES.contains(code.toUpperCase());
+        return code != null && VALID_CODES.contains(code.toUpperCase().trim());
     }
 
+    // --- Date Validator Logic ---
+
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
     /**
-     * Validates if a date string is in the format YYYY-MM-DD.
-     * @param dateString The date string to validate.
-     * @return true if the format is correct, false otherwise.
+     * Checks if the given string is a valid date in YYYY-MM-DD format.
      */
-    public static boolean isValidDate(String dateString) {
-        if (dateString == null) {
-            return false;
-        }
+    public static boolean isValidDate(String dateStr) {
         try {
-            // Attempt to parse the date using the expected format
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-            LocalDate.parse(dateString, formatter);
+            if (dateStr == null || dateStr.isEmpty()) return false;
+            LocalDate.parse(dateStr, DATE_FORMATTER);
             return true;
         } catch (DateTimeParseException e) {
             return false;
         }
     }
-    // --- Public Mandatory/Optional Methods ---
+
+    // --- Character-only Validator Logic ---
+
+    private static final Pattern LETTER_SPACE_PATTERN = Pattern.compile("^[a-zA-Z\\s]+$");
 
     /**
-     * Prompts the user for an A-Number. The entry is MANDATORY and cannot be left blank.
-     * The input must conform to the A######### format and pass integrity checks.
-     * * @param scanner The Scanner object for user input.
-     * @param conn A mock database connection for integrity checks.
-     * @param passportNumber The related passport number for integrity check context.
-     * @param countryCode The related country code for integrity check context.
-     * @return The validated Alien Number string.
-     * @throws SQLException If a database error occurs during the integrity check.
+     * Checks if the given string contains only letters and spaces.
      */
-    public static String getAlienNumberMandatory(Scanner scanner, Connection conn, String passportNumber, String countryCode) throws SQLException {
-        String AlienNumber = null;
-        boolean isValid = false;
-
-        do {
-            System.out.print("Enter Alien Number (A#########) - MANDATORY: ");
-            String input = scanner.nextLine().trim();
-
-            if (input.isEmpty()) {
-                System.err.println("Error: Alien Number is mandatory and cannot be left blank.\n");
-                continue; // Loop again, as input is required
-            }
-
-            // Case 1: Check format (A#########)
-            if (!isValidANumberFormat(input)) {
-                System.err.println("Invalid format. ANumber must start with 'A' followed by exactly 9 digits (A#########).\n");
-                isValid = false;
-            } else {
-                // Case 2: Format is good, now check database integrity
-                try {
-                    isValid = checkAlienNumberIntegrity(conn, input, passportNumber, countryCode);
-                } catch (SQLException e) {
-                    // Re-throw the database error to the caller
-                    throw e;
-                }
-
-                if (isValid) {
-                    AlienNumber = input; // Assign only if valid
-                } else {
-                    // Error message printed inside checkAlienNumberIntegrity or the next line
-                    System.err.println("Integrity check failed. Please verify the ANumber against the provided Passport/CountryCode.\n");
-                }
-            }
-
-        } while (!isValid);
-
-        return AlienNumber;
+    public static boolean containsOnlyLetters(String str) {
+        if (str == null || str.trim().isEmpty()) return false;
+        Matcher matcher = LETTER_SPACE_PATTERN.matcher(str);
+        return matcher.matches();
     }
 
-    /**
-     * Prompts the user for an A-Number. The entry is OPTIONAL and can be left blank.
-     * If entered, the input must conform to the A######### format and pass integrity checks.
-     * * @param scanner The Scanner object for user input.
-     * @param conn A mock database connection for integrity checks.
-     * @param passportNumber The related passport number for integrity check context.
-     * @param countryCode The related country code for integrity check context.
-     * @return The validated Alien Number string, or null if the user left it blank.
-     * @throws SQLException If a database error occurs during the integrity check.
-     */
-    public String getAlienNumberOptional(Scanner scanner, Connection conn, String passportNumber, String countryCode) throws SQLException {
-        String AlienNumber = null;
-        boolean isValid = false;
-
-        do {
-            System.out.print("Enter Alien Number (A#########) or leave blank if not applicable (OPTIONAL): ");
-            String input = scanner.nextLine().trim();
-
-            if (input.isEmpty()) {
-                // Case 1: Optional, and user entered nothing
-                return null; // Exit the loop and return null
-            }
-
-            // Case 2: Check format (A#########)
-            if (!isValidANumberFormat(input)) {
-                System.err.println("Invalid format. ANumber must start with 'A' followed by exactly 9 digits (A#########).\n");
-                isValid = false;
-            } else {
-                // Case 3: Format is good, now check database integrity
-                try {
-                    isValid = checkAlienNumberIntegrity(conn, input, passportNumber, countryCode);
-                } catch (SQLException e) {
-                    // Re-throw the database error to the caller
-                    throw e;
-                }
-
-                if (isValid) {
-                    AlienNumber = input; // Assign only if valid
-                } else {
-                    System.err.println("Integrity check failed. Please verify the ANumber against the provided Passport/CountryCode.\n");
-                }
-            }
-
-        } while (!isValid);
-
-        return AlienNumber;
-    }
-    /**
-     * Validates the format of an Alien Number (A#########).
-     * It must start with 'A' followed by exactly 9 digits.
-     * @param aNumber The string to validate.
-     * @return true if the format is correct, false otherwise.
-     */
-    public static boolean isValidANumberFormat(String aNumber) {
-        if (aNumber == null || aNumber.trim().isEmpty()) {
-            return false;
-        }
-        // Regex: Starts with 'A', followed by exactly 9 digits. Case-insensitive.
-        return aNumber.trim().toUpperCase().matches("^A\\d{9}$");
-    }
+    // --- Alien Number Generation and Conflict Logic ---
 
     /**
-     * Checks if a given ANumber is valid and not already assigned to a different passport record.
-     * This is a crucial integrity check.
+     * Finds the current maximum ANumber in the database and returns the next sequential number as a String.
+     * The A-Number is assumed to be stored as a string of digits (e.g., 'A1234567').
+     *
      * @param conn The active database connection.
-     * @param aNumber The Alien Number (A#########) to check.
-     * @param passportNumber The traveler's Passport Number.
-     * @param countryCode The traveler's Country Code.
-     * @return true if the ANumber is valid for this passport or new; false if conflict is found.
-     * @throws SQLException if a database access error occurs.
+     * @return The next available A-Number as a String.
+     * @throws SQLException If a database error occurs.
      */
-    public static boolean checkAlienNumberIntegrity(Connection conn, String aNumber, String passportNumber, String countryCode) throws SQLException {
-        if (conn == null) {
-            System.err.println("Database connection is null during ANumber integrity check.");
+    public static String generateNextANumber(Connection conn) throws SQLException {
+        // Find the maximum ANumber, convert it to a number, and then find the maximum.
+        String sql = "SELECT MAX(CAST(\"ANumber\" AS BIGINT)) FROM PUBLIC.\"Person\" WHERE \"ANumber\" IS NOT NULL";
+        long maxANumber = 562615698; // Start at a safe, high number if no A-Numbers exist
+
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            if (rs.next() && rs.getString(1) != null) {
+                // If a max ANumber is found, increment it.
+                maxANumber = rs.getLong(1) + 1;
+            } else {
+                // If the table is empty or ANumber column is all null, start at the default.
+                System.out.println("No existing A-Numbers found. Starting generation at: " + maxANumber);
+            }
+        } catch (SQLException e) {
+            System.err.println("Error generating next A-Number. Using fallback: " + maxANumber);
+            // Log the error but continue with the fallback number to avoid stopping the process.
+        }
+
+        // Return the new number formatted as a string
+        return String.valueOf(maxANumber);
+    }
+
+
+    /**
+     * Checks if the given ANumber is a conflict (already assigned to a different passport combination).
+     * @param conn The active database connection.
+     * @param aNumber The Alien Number to check.
+     * @param passportNumber The passport number to match.
+     * @param countryCode The passport country code to match.
+     * @return true if the ANumber is valid for this traveler (or not in DB); false if conflict found.
+     * @throws SQLException If a database error occurs.
+     */
+    public static boolean isANumberValid(Connection conn, String aNumber, String passportNumber, String countryCode) throws SQLException {
+        if (conn == null || aNumber == null || aNumber.trim().isEmpty()) {
+            // Internal error - should not happen if called correctly
+            System.err.println("Internal Error: Missing data for ANumber integrity check.");
             return false;
         }
 
         // SQL Query: Check for a record that has the entered ANumber BUT a DIFFERENT passport combination.
-        // Finding ANY such record indicates a conflict (ANumber is taken by someone else).
         String sql = "SELECT COUNT(*) FROM PUBLIC.\"Person\" WHERE \"ANumber\" = ? AND NOT (\"PassportNumber\" = ? AND \"PassportCountryCode\" = ?)";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            // Ensure parameters match the query placeholders (?)
             ps.setString(1, aNumber.trim());
             ps.setString(2, passportNumber.trim());
             ps.setString(3, countryCode.trim());
@@ -241,13 +156,71 @@ public class Validators {
                     }
                 }
             }
-
-            // If count is 0, the ANumber is either not in the DB, OR it's correctly linked to the passport.
             return true; // Validation Passed
 
         } catch (SQLException e) {
             // Re-throw the SQLException to allow the calling method (AdmitTraveler) to handle the exception gracefully
             throw e;
         }
+    }
+
+    /**
+     * Helper method to get the Alien Number, which is **mandatory** for immigrants and denied entries.
+     * If the user doesn't provide a valid A-Number, one is generated automatically.
+     */
+    public static String getAlienNumberMandatory(Scanner scanner, Connection conn, String passportNumber, String countryCode) throws SQLException {
+        String alienNumber;
+        boolean isValid = false;
+
+        System.out.println("Enter Alien Registration Number (A-Number - Mandatory, or press Enter to GENERATE new one): ");
+        alienNumber = scanner.nextLine().trim();
+
+        if (!alienNumber.isEmpty()) {
+            if (alienNumber.length() < 7 || !alienNumber.matches("\\d+")) {
+                System.err.println("Invalid format. A-Number must be a digit-only string (7+ digits). Attempting automatic generation.");
+            } else {
+                // If provided and passes format check, perform A-Number conflict check
+                if (isANumberValid(conn, alienNumber, passportNumber, countryCode)) {
+                    isValid = true;
+                } else {
+                    System.err.println("The entered A-Number conflicts with an existing record. Attempting automatic generation.");
+                }
+            }
+        }
+
+        // If not valid (either empty, invalid format, or conflicted), generate a new one
+        if (!isValid) {
+            alienNumber = generateNextANumber(conn);
+            System.out.println("✅ Automatically generated new A-Number: " + alienNumber);
+        }
+
+        return alienNumber;
+    }
+
+    /**
+     * Helper method to get the Alien Number, which is **optional** for admitted non-immigrants.
+     * Returns null if the user skips entering a value, which allows the database to store NULL.
+     */
+    public static String getAlienNumberOptional(Scanner scanner, Connection conn, String passportNumber, String countryCode) throws SQLException {
+        String alienNumber;
+        System.out.print("Enter Alien Registration Number (A-Number - Optional, press Enter to skip): ");
+        alienNumber = scanner.nextLine().trim();
+
+        // If provided, apply basic validation and conflict check
+        if (!alienNumber.isEmpty()) {
+            if (alienNumber.length() < 9 || !alienNumber.matches("\\d+")) {
+                System.err.println("Warning: Invalid A-Number format detected. Returning NULL.");
+                return null;
+            }
+
+            // Perform A-Number conflict check against the database
+            if (!isANumberValid(conn, alienNumber, passportNumber, countryCode)) {
+                System.err.println("Warning: A-Number conflict detected. Returning NULL.");
+                return null;
+            }
+        }
+
+        // If empty, return null to be stored in DB as NULL. Otherwise, return the validated value.
+        return alienNumber.isEmpty() ? null : alienNumber;
     }
 }

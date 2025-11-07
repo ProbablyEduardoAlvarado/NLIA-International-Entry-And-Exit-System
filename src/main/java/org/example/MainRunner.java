@@ -53,7 +53,7 @@ public class MainRunner {
      * Starts an interactive console loop, passing the active database connection.
      * @param dbConnection The active, persistent database connection.
      */
-    private static void startConsoleInterface(Connection dbConnection) { // Changed parameter to Connection
+    private static void startConsoleInterface(Connection dbConnection) throws SQLException { // Changed parameter to Connection
         Scanner scanner = new Scanner(System.in);
         String input;
         boolean running = true;
