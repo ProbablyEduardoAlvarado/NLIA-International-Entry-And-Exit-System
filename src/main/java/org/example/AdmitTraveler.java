@@ -27,6 +27,7 @@ public class AdmitTraveler {
         String Surname;
         String DOB;
         String PassportNumber;
+
         String CountryCode;
         String PassportIssueDate;
         String PassportExpiry;
@@ -78,8 +79,12 @@ public class AdmitTraveler {
 
         // --- 4. Passport Number ---
         System.out.print("Enter Passport Number: ");
-        PassportNumber = scanner.nextLine();
-
+        do {
+            PassportNumber = scanner.nextLine().trim().toUpperCase();
+            if (PassportNumber.length() != 9) {
+                System.err.println("Invalid Input.  Passports must have 9 characters.");
+            }
+        } while (PassportNumber.length() != 9);
         // --- 5. Country of Citizenship ---
         do {
             System.out.print("Enter Country of Citizenship (3-letter Code): ");
@@ -211,7 +216,8 @@ public class AdmitTraveler {
                 } catch (SQLException e) {
                     System.err.println("Database error during Alien Number validation: " + e.getMessage());
                     throw new RuntimeException(e);
-                }if (AlienNumber != null) {
+                }
+                if (AlienNumber != null) {
                     AlienNumber = "A" + AlienNumber;
                 }
 
@@ -244,7 +250,7 @@ public class AdmitTraveler {
                             System.err.println("Database error during Alien Number validation: " + e.getMessage());
                             throw new RuntimeException(e);
                         }
-                            // *** INSERT SNIPPET HERE (New Line 203) ***
+
                         if (AlienNumber != null) {
                             AlienNumber = "A" + AlienNumber;
                         }
@@ -320,7 +326,7 @@ public class AdmitTraveler {
 
                     System.out.print("Enter Reason for Denial (Max 255 chars): ");
                     NotAdmittedReason = scanner.nextLine();
-                    if(NotAdmittedReason.length() > 255) {
+                    if (NotAdmittedReason.length() > 255) {
                         NotAdmittedReason = NotAdmittedReason.substring(0, 255); // Truncate if too long
                     }
 
@@ -353,8 +359,11 @@ public class AdmitTraveler {
                 System.out.println("ADMITTED CITIZEN");
                 break;
             }
-            // Immigrant/Permanent Resident classes
             case "PR":
+                System.out.println("RETURNING PERMANENT RESIDENT");
+                System.out.println("ARC A-Number: " + AlienNumber);
+                break;
+            // Immigrant Visa
             case "EB1":
             case "DV":
             case "EB2":
@@ -368,7 +377,7 @@ public class AdmitTraveler {
             case "IR2":
             case "IR5":
             case "SB": {
-                System.out.println("ADMITTED IMMIGRANT/PERMANENT RESIDENT");
+                System.out.println("ADMITTED IMMIGRANT VISA HOLDER");
                 System.out.println("Class: " + AdmissionClass);
                 System.out.println("A-Number: " + AlienNumber);
                 break;
@@ -389,47 +398,52 @@ public class AdmitTraveler {
                 break;
             }
         }
-
-
-        // --- SQL Execution ---
+        // --- 15. Execute Database Call ---
         try {
-            System.out.println("\n--- Submitting New Traveler Record ---");
+            // Add type casting for PostgreSQL function parameters for type safety
+            String callString = "{call PUBLIC.\"Admit_New_Traveler\"(?, ?, ?::date, ?, ?::char(3), ?::date, ?::date, ?, ?, ?, ?::char(3), ?::date, ?, ?::boolean, ?, ?::date, ?)}";
 
+            try (CallableStatement cs = conn.prepareCall(callString)) {
+                cs.setString(1, GivenName);
+                cs.setString(2, Surname);
+                cs.setObject(3, DOB, Types.DATE); // explicitly cast by '::date'
+                cs.setString(4, PassportNumber);
+                cs.setString(5, CountryCode); // Country of citizenship explicitly cast by '::char(3)'
+                cs.setObject(6, PassportIssueDate, Types.DATE); // explicitly cast by '::date'
+                cs.setObject(7, PassportExpiry, Types.DATE); // explicitly cast by '::date'
+                cs.setString(8, AirlineCode); // UAL
+                cs.setString(9, FlightNumber); // 2362
+                cs.setString(10, OriginAirport); // Origin FLight IATA
+                cs.setString(11,FlightCountryCode); // Origin Flight Country
+                cs.setObject(12, ArrivalDate, Types.DATE); // explicitly cast by '::date'
+                cs.setString(13, AdmissionClass);
+                cs.setBoolean(14, Admitted); // explicitly cast by '::boolean'
+                cs.setObject(15, AlienNumber, Types.VARCHAR);
+                cs.setObject(16, ExitDate, Types.DATE); // explicitly cast by '::date'
+                cs.setObject(17, NotAdmittedReason, Types.VARCHAR);
 
-            CallableStatement cs = conn.prepareCall("{call Admit_New_Traveler(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
+                // Fix 2: Execute the function using executeQuery to retrieve the Result Set (PersonID, I94RecordID)
+                try (ResultSet rs = cs.executeQuery()) {
+                    if (rs.next()) {
+                        int personId = rs.getInt(1);
+                        int i94RecordId = rs.getInt(2);
+                        System.out.println("✅ Success: Traveler '" + GivenName + " " + Surname + "' recorded!");
+                        System.out.println("  - Person ID: " + personId);
+                        System.out.println("  - I-94 Record ID: " + i94RecordId);
+                    } else {
+                        System.err.println("❌ Database Error: Function executed successfully but returned no results (PersonID, I94RecordID).");
+                    }
+                }
 
-            cs.setString(1, GivenName);
-            cs.setString(2, Surname);
-            cs.setString(3, DOB);
-            cs.setString(4, PassportNumber);
-            cs.setString(5, CountryCode);
-            cs.setString(6, PassportIssueDate);
-            cs.setString(7, PassportExpiry);
-            cs.setString(8, AirlineCode);
-            cs.setString(9, FlightNumber);
-            cs.setString(10, OriginAirport);
-            cs.setString(11, FlightCountryCode);
-            cs.setString(12, ArrivalDate);
-            cs.setString(13, AdmissionClass);
-            cs.setBoolean(14, Admitted);
-            cs.setObject(15, AlienNumber, Types.VARCHAR);
-            cs.setObject(16, ExitDate, Types.DATE);
-            cs.setObject(17, NotAdmittedReason, Types.VARCHAR);
-
-
-            //cs.execute();
-
-            if (conn.isValid(1)) {
-                System.out.println("✅ Success: Traveler '" + GivenName + " " + Surname + "' recorded successfully!");
+            } catch (SQLException e) {
+                System.err.println("❌ Database Error: Failed to admit new traveler.");
+                System.err.println("SQL State: " + e.getSQLState());
+                System.err.println("Error Message: " + e.getMessage());
             }
-
-        } catch (SQLException e) {
-            System.err.println("❌ Database Error: Failed to admit new traveler.");
-            System.err.println("SQL State: " + e.getSQLState());
-            System.err.println("Error Message: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("❌ Unexpected Error: " + e.getMessage());
         }
     }
-
 
     /**
      * Helper method to repeatedly prompt and validate the Admission Class input.
