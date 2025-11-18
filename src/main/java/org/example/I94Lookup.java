@@ -4,6 +4,7 @@ import java.sql.*;
 import java.util.Scanner;
 
 import static org.example.Validators.isValidCode;
+import static org.example.Validators.isValidDate;
 
 public class I94Lookup {
     /**
@@ -51,11 +52,30 @@ public class I94Lookup {
      * @throws java.sql.SQLException if the ANumber is invalid
      */
     private void aNumberI94Lookup(){
-        System.out.println("Enter the Alien Registration Number of the Traveler:");
 
+        Scanner scanner = new Scanner(System.in);
+        String AlienNumber; // For later: Use an int to validated and then convert into string once validated...?
+        System.out.println("Enter the Alien Registration Number of the Traveler");
+        do {
+            AlienNumber = scanner.nextLine();
+                if (AlienNumber.length() < 9 || !AlienNumber.matches("\\d+")) {
+                    AlienNumber = null; // Consumes and resets the input
+                    System.err.println("Invalid A-Number.  Enter a Valid Alien Registration Number.");
+            }
+        }while(AlienNumber == null);
+        AlienNumber = "A"+AlienNumber;
+
+        System.out.println(AlienNumber);
         return;
     }
 
+    /** METHOD 2 - Lookup by Passport Data
+     * Uses the Passport Number and Issuing Country code entered to -
+     *        First, validate the Country Code is correct
+     *        Second, Validates the Passport Length conforms
+     * @returns I94Record for the A Number
+     * @throws java.sql.SQLException  if the ANumber is invalid
+     */
     private static void passportI94Lookup(Connection conn){
         Scanner scanner = new Scanner(System.in);
         String CountryCode;
@@ -136,7 +156,7 @@ public class I94Lookup {
                                     "\nRemoval Reason: " + notAdmittedReason +"\n-------------");
 
                         }
-                    } Thread.sleep(5000);
+                    } Thread.sleep(5000); // Gives someone a chance to read the result before resetting.
                 // End of while loop
 
                     // No Results handler

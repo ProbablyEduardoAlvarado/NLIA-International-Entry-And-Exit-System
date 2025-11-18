@@ -175,7 +175,6 @@ public class admissionClasses {
                 System.err.println("WARNING: Admission Class " + AdmissionClass + " has no defined Exit Date rule. Defaulting to 1 day.");
                 exitDate = arrival.plusDays(1);
         }
-
         // Return date in YYYY-MM-DD format
         return exitDate != null ? exitDate.toString() : null;
     }

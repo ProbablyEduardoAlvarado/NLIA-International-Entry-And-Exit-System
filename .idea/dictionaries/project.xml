@@ -4,6 +4,7 @@
       <w>homeinvasion</w>
       <w>iata</w>
       <w>icao</w>
+      <w>postgre</w>
     </words>
   </dictionary>
 </component>
