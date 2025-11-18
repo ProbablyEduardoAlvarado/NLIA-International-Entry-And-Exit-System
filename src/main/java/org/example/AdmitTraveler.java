@@ -254,7 +254,7 @@ public class AdmitTraveler {
                         if (AlienNumber != null) {
                             AlienNumber = "A" + AlienNumber;
                         }
-
+                    }else{
                         // 14. Calculate Max Exit Date (Initial ExitDate)
                         ExitDate = admissionClassExitDate(ArrivalDate, AdmissionClass);
                         String MaxExitDate = ExitDate; // Store the maximum allowed date
