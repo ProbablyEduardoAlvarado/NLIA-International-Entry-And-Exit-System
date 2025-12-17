@@ -235,4 +235,67 @@ public class I94Lookup {
         }
         return;
     }
+    // In I94Lookup.java
+    public boolean checkI94ForAdmissionByPassport(Connection conn, String passportNumber, String passportCountryCode) {
+        final String sql =
+                "SELECT * FROM PUBLIC.\"Lookup_I94_Record\"(" +
+                        "p_passport_num := ?, p_passport_country_code := ?::char(3))";
+
+        boolean foundAny = false;
+        boolean hasPriorRemoval = false;
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, passportNumber);
+            ps.setString(2, passportCountryCode);
+
+            try (ResultSet rs = ps.executeQuery()) {
+
+                // show any NOTICE messages from the DB function (same pattern you use for A-number)
+                for (SQLWarning w = ps.getWarnings(); w != null; w = w.getNextWarning()) {
+                    System.out.println(w.getMessage());
+                }
+                ps.clearWarnings();
+
+                while (rs.next()) {
+                    foundAny = true;
+
+                    String i94 = rs.getString("I-94 #");
+                    String flight = rs.getString("Flight");
+                    String origin = rs.getString("ORIGIN");
+                    String entryDate = String.valueOf(rs.getDate("EntryDate"));
+
+                    Date exitDateObj = rs.getDate("ExitDate");
+                    String exitDate = (exitDateObj == null) ? "" : String.valueOf(exitDateObj);
+
+                    String coa = rs.getString("COA");
+                    boolean admitted = rs.getBoolean("Admitted");
+                    String reason = rs.getString("NotAdmittedReason");
+
+                    System.out.println("Record " + i94
+                            + " | Flight: " + flight + " | Origin: " + origin
+                            + " | Entered: " + entryDate
+                            + " | COA: " + coa
+                            + " | Departed: " + exitDate);
+
+                    // match your A-number logic: don’t treat PAR as a “prior removal” warning
+                    if (!admitted && !"PAR".equalsIgnoreCase(coa)) {
+                        hasPriorRemoval = true;
+                        System.err.println("----PRIOR REMOVAL/INADMISSIBILITY----\n"
+                                + "Removed on " + exitDate
+                                + "\nReason: " + reason
+                                + "\n------------------------------------");
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("I-94 lookup failed: " + e.getMessage());
+        }
+
+        if (!foundAny) {
+            System.out.println("No prior I-94 records found for " + passportCountryCode + " " + passportNumber + ".");
+        }
+
+        return hasPriorRemoval;
+    }
+
 }
