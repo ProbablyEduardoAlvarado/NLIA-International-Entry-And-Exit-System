@@ -26,7 +26,7 @@ public class AdmitTraveler {
         String DOB;
         String PassportNumber;
 
-        String CountryCode;
+        String CountryCode = "";
         String PassportIssueDate;
         String PassportExpiry;
         String AirlineCode;
@@ -34,7 +34,7 @@ public class AdmitTraveler {
         String OriginAirport;
         String ArrivalDate;
         String AdmissionClass = "";
-        String AlienNumber = ""; // Declared here for function scope
+        String AlienNumber = "";
         int length;
 
         /*
@@ -43,111 +43,56 @@ public class AdmitTraveler {
          * to expedite the process to the flight and admission details
          */
 
-        // --- 1. Passport Number ---
-        System.out.print("Enter Passport Number: ");
-        do {
-            PassportNumber = scanner.nextLine().trim().toUpperCase();
-            if (PassportNumber.length() != 9) {
-                System.err.println("Invalid Input.  Passports must have 9 characters.");
-            }
-        } while (PassportNumber.length() != 9);
-        // --- 2. Country of Citizenship ---
-        do {
-            System.out.print("Enter Country of Citizenship (3-letter Code): ");
-            CountryCode = scanner.nextLine().trim().toUpperCase();
-            if (!isValidCode(CountryCode)) {
-                System.err.println("Invalid input. Country Code must be a 3-letter code found in the valid list.\n");
-            }
-        } while (!isValidCode(CountryCode));
-
-        String selectQuery = "SELECT ppt.\"IssueDate\", ppt.\"ExpDate\", per.* " +
-                "FROM PUBLIC.\"Passport\" AS ppt " +
-                "INNER JOIN PUBLIC.\"Person\" AS per " +
-                "ON ppt.\"PassportNumber\" = per.\"PassportNumber\" AND ppt.\"CountryCode\" = per.\"PassportCountryCode\" " +
-                "WHERE p.\"PassportNumber\" = ? AND p.\"CountryCode\" = ?";
-        try (PreparedStatement ps = conn.prepareStatement(selectQuery)) {
-            ps.setString(1, PassportNumber);
-            ps.setString(2, CountryCode);
-
-            try (ResultSet rs = ps.executeQuery()) {
-
-                if (rs.next()){ // Retrieve the values and proceed to the flight details
-                    PassportIssueDate = rs.getString("IssueDate");
-                    PassportExpiry = rs.getString("ExpDate");
-                    GivenName = rs.getString("GivenName");
-                    Surname = rs.getString("Surname");
-                    DOB = rs.getString("DateOfBirth");
-                    if ((rs.getString("ANumber") !=null && !("USA".equals(CountryCode)))){
-                        AlienNumber = rs.getString("ANumber");
-                    }
-                    System.out.println("Found: " + Surname.toUpperCase() + ", "+ GivenName.toUpperCase());
-                }else{ // No passport found, proceed to entering the rest of the passport details
-
-                }
+        PassportLookupResult r = checkForPresentPassportRecord(conn, scanner);
 
 
-            }catch(SQLException e){
-                System.err.println(e.getMessage());
-            }
-        } catch (RuntimeException | SQLException e) {
-            throw new RuntimeException(e);
-            System.err.println(e.getMessage());
+        PassportNumber = r.passportNumber();
+        CountryCode    = r.countryCode();
+
+        if (r.found()) {
+            // Autofill from DB
+            GivenName        = r.givenName();
+            Surname          = r.surname();
+            DOB              = r.dob();
+            AlienNumber      = r.aNumber();
+            PassportIssueDate = r.issueDate();
+            PassportExpiry    = r.expDate();
+        } else {
+            // Not presently found in the DB: continue with manual entry
+            do {
+                System.out.print("Enter Given Name: ");
+                GivenName = scanner.nextLine();
+                length = GivenName.length();
+                if (length > 50) System.err.println("Invalid input. Name cannot exceed 50 characters.\n");
+                else if (!containsOnlyLetters(GivenName)) System.err.println("Invalid input. Name should only contain characters and spaces.\n");
+            } while (length > 50 || !containsOnlyLetters(GivenName));
+
+            do {
+                System.out.print("Enter Surname: ");
+                Surname = scanner.nextLine();
+                length = Surname.length();
+                if (length > 50) System.err.println("Invalid input. Surname cannot exceed 50 characters.\n");
+                else if (!containsOnlyLetters(Surname)) System.err.println("Invalid input. Surname should only contain characters and spaces.\n");
+            } while (length > 50 || !containsOnlyLetters(Surname));
+
+            do {
+                System.out.print("Enter Date of Birth (YYYY-MM-DD): ");
+                DOB = scanner.nextLine();
+                if (!isValidDate(DOB)) System.err.println("Invalid input. Date must be in YYYY-MM-DD format.\n");
+            } while (!isValidDate(DOB));
+
+            do {
+                System.out.print("Enter Passport Issue Date (YYYY-MM-DD): ");
+                PassportIssueDate = scanner.nextLine();
+                if (!isValidDate(PassportIssueDate)) System.err.println("Invalid input. Date must be in YYYY-MM-DD format.\n");
+            } while (!isValidDate(PassportIssueDate));
+
+            do {
+                System.out.print("Enter Passport Expiry Date (YYYY-MM-DD): ");
+                PassportExpiry = scanner.nextLine();
+                if (!isValidDate(PassportExpiry)) System.err.println("Invalid input. Date must be in YYYY-MM-DD format.\n");
+            } while (!isValidDate(PassportExpiry));
         }
-
-        // --- 3. Given Name ---
-        // Constraint: GivenName < 50 chars and only CHARS
-        do {
-            System.out.print("Enter Given Name: ");
-            GivenName = scanner.nextLine();
-            length = GivenName.length();
-
-            if (length > 50) {
-                System.err.println("Invalid input. Name cannot exceed 50 characters.\n");
-            } else if (!containsOnlyLetters(GivenName)) {
-                System.err.println("Invalid input. Name should only contain characters and spaces.\n");
-            }
-        } while (length > 50 || !containsOnlyLetters(GivenName));
-
-        // --- 4. Surname ---
-        // Constraint: Surname < 50 chars and only CHARS
-        do {
-            System.out.print("Enter Surname: ");
-            Surname = scanner.nextLine();
-            length = Surname.length();
-
-            if (length > 50) {
-                System.err.println("Invalid input. Surname cannot exceed 50 characters.\n");
-            } else if (!containsOnlyLetters(Surname)) {
-                System.err.println("Invalid input. Surname should only contain characters and spaces.\n");
-            }
-        } while (length > 50 || !containsOnlyLetters(Surname));
-
-        // --- 5. Date of Birth ---
-        do {
-            System.out.print("Enter Date of Birth (YYYY-MM-DD): ");
-            DOB = scanner.nextLine();
-            if (!isValidDate(DOB)) {
-                System.err.println("Invalid input. Date must be in YYYY-MM-DD format.\n");
-            }
-        } while (!isValidDate(DOB));
-
-        // --- 6. Passport Issue Date ---
-        do {
-            System.out.print("Enter Passport Issue Date (YYYY-MM-DD): ");
-            PassportIssueDate = scanner.nextLine();
-            if (!isValidDate(PassportIssueDate)) {
-                System.err.println("Invalid input. Date must be in YYYY-MM-DD format.\n");
-            }
-        } while (!isValidDate(PassportIssueDate));
-
-        // --- 7. Passport Expiry Date ---
-        do {
-            System.out.print("Enter Passport Expiry Date (YYYY-MM-DD): ");
-            PassportExpiry = scanner.nextLine();
-            if (!isValidDate(PassportExpiry)) {
-                System.err.println("Invalid input. Date must be in YYYY-MM-DD format.\n");
-            }
-        } while (!isValidDate(PassportExpiry));
 
         // --- 8. Airline Code (2-letter) ---
         do {
@@ -195,6 +140,15 @@ public class AdmitTraveler {
             }
         } while (!isValidDate(ArrivalDate));
 
+        // Begin Phase C: Admission details
+
+        I94Lookup i94 = new I94Lookup();
+        boolean priorRemovalFlag = i94.checkI94ForAdmissionByPassport(conn, PassportNumber, CountryCode);
+
+        if (priorRemovalFlag) {
+            System.err.println("Prior Inadmissibility/Removal, review Alien File #" + AlienNumber);
+        }
+
         // --- 12. Admission Class ---
 
         //AdmissionClass Must be validated through the available class codes, and certain non-permanent residents must
@@ -213,17 +167,15 @@ public class AdmitTraveler {
          * ExitDate = NULL
          * NotAdmittedReason = NULL
          * */
-        if (CountryCode.equalsIgnoreCase("USA")) {
+        if ("USA".equalsIgnoreCase(CountryCode)) {
             AlienNumber = null;
             AdmissionClass = "C";
             Admitted = true;
-            ExitDate = null;
-            NotAdmittedReason = null;
 
             // All other Arrivals will be subjected to the Admissions Process and validation requirements for all
             // arrivals through a do-while loop.
         } else { // Returning Permanent Residents (Green Card Holders) 'PR' Class, will receive expedited validation
-            admissionClasses.printDebugStatus(); // Temporary Debug statement ensuring the AdmissionClasses have been parsed.
+            printDebugStatus(); // Temporary Debug statement ensuring the AdmissionClasses have been parsed.
             boolean isAdmissionClassValid;
             System.out.println("Enter the Admission Class of the Arriving Alien \nReturning Permanent Residents may be coded as 'PR'/'ARC'/'LPR'");
             do {
@@ -245,8 +197,6 @@ public class AdmitTraveler {
                 }
 
                 Admitted = true;
-                ExitDate = null;
-                NotAdmittedReason = null;
 
                 try {
                     AlienNumber = getAlienNumberMandatory(scanner, conn, PassportNumber, CountryCode);
@@ -254,9 +204,10 @@ public class AdmitTraveler {
                     System.err.println("Database error during Alien Number validation: " + e.getMessage());
                     throw new RuntimeException(e);
                 }
-                if (AlienNumber != null) {
+                if (AlienNumber != null && !AlienNumber.isBlank() && !AlienNumber.startsWith("A")) {
                     AlienNumber = "A" + AlienNumber;
                 }
+
 
             } else { // All other non-immigrant aliens, Review Admissibility and admit or deny
 
@@ -277,8 +228,6 @@ public class AdmitTraveler {
                     boolean ImmigrantVisaHolder = admissionClassExitDate(ArrivalDate, AdmissionClass) == null;
 
                     if (ImmigrantVisaHolder) {
-                        ExitDate = null;
-                        NotAdmittedReason = null;
                         System.out.println("The Immigrant Visa Presented is a " + AdmissionClass + " Visa. \nEnter the Alien Registration Number: ");
 
                         try {
@@ -288,14 +237,16 @@ public class AdmitTraveler {
                             throw new RuntimeException(e);
                         }
 
-                        if (AlienNumber != null) {
+                        if (AlienNumber != null && !AlienNumber.isBlank() && !AlienNumber.startsWith("A")) {
                             AlienNumber = "A" + AlienNumber;
                         }
-                    }else{
+
+                    } else {
                         // 14. Calculate Max Exit Date (Initial ExitDate)
                         ExitDate = admissionClassExitDate(ArrivalDate, AdmissionClass);
                         String MaxExitDate = ExitDate; // Store the maximum allowed date
 
+                        assert MaxExitDate != null;
                         LocalDate maxDate = LocalDate.parse(MaxExitDate); // Convert max date string to LocalDate
 
                         String adjustmentDecision;
@@ -424,13 +375,13 @@ public class AdmitTraveler {
                     System.out.println("ADMITTED NON-IMMIGRANT: CLASS " + AdmissionClass);
                     System.out.println("Exit Date: " + ExitDate);
                     if (AlienNumber != null && !AlienNumber.isEmpty()) {
-                        AlienNumber = "A"+AlienNumber; // Sets the A Number formatting to be passed to the Database and only when a not null is detected.
+                        AlienNumber = "A" + AlienNumber; // Sets the A Number formatting to be passed to the Database and only when a not null is detected.
                         System.out.println("A-Number: " + AlienNumber);
                     }
                 } else {
                     System.out.println("DENIED ADMISSION: CLASS " + AdmissionClass);
                     System.out.println("Reason: " + NotAdmittedReason);
-                    AlienNumber = "A"+AlienNumber;
+                    AlienNumber = "A" + AlienNumber;
                     System.out.println("A-Number: " + AlienNumber);
                     System.out.println("Removal Date: " + ExitDate);
                 }
@@ -453,7 +404,7 @@ public class AdmitTraveler {
                 cs.setString(8, AirlineCode); // UAL
                 cs.setString(9, FlightNumber); // 2362
                 cs.setString(10, OriginAirport); // Origin FLight IATA
-                cs.setString(11,FlightCountryCode); // Origin Flight Country
+                cs.setString(11, FlightCountryCode); // Origin Flight Country
                 cs.setObject(12, ArrivalDate, Types.DATE); // explicitly cast by '::date'
                 cs.setString(13, AdmissionClass);
                 cs.setBoolean(14, Admitted); // explicitly cast by '::boolean'
@@ -499,4 +450,91 @@ public class AdmitTraveler {
         } while (!admissionClassValidator(AdmissionClass));
         return AdmissionClass;
     }
+
+    /**
+     * checkForPresentPassport()
+     *
+     * @param conn - Passes the DB connection to prepare the query
+     *             If there is an existing passport record
+     * @returns GivenName
+     * @returns Surname
+     * @returns AlienNumber if not null in the DB
+     * @returns ExpiryDate
+     * @returns
+     *
+     */
+    private PassportLookupResult checkForPresentPassportRecord(Connection conn, Scanner scanner) {
+
+        String passportNumber;
+        String countryCode;
+
+        // --- 1. Passport Number ---
+        do {
+            System.out.print("Enter Passport Number: ");
+            passportNumber = scanner.nextLine().trim().toUpperCase();
+            if (passportNumber.length() != 9) {
+                System.err.println("Invalid Input. Passports must have 9 characters.");
+            }
+        } while (passportNumber.length() != 9);
+
+        // --- 2. Country of Citizenship ---
+        do {
+            System.out.print("Enter Country of Citizenship (3-letter Code): ");
+            countryCode = scanner.nextLine().trim().toUpperCase();
+            if (!isValidCode(countryCode)) {
+                System.err.println("Invalid input. Country Code must be a 3-letter code found in the valid list.\n");
+            }
+        } while (!isValidCode(countryCode));
+
+        String sql =
+                "SELECT per.\"PersonID\", per.\"GivenName\", per.\"Surname\", per.\"DateOfBirth\", per.\"ANumber\", " +
+                        "       ppt.\"IssueDate\", ppt.\"ExpDate\" " +
+                        "FROM public.\"Passport\" ppt " +
+                        "JOIN public.\"Person\" per " +
+                        "  ON ppt.\"PassportNumber\" = per.\"PassportNumber\" " +
+                        " AND ppt.\"CountryCode\" = per.\"PassportCountryCode\" " +
+                        "WHERE ppt.\"PassportNumber\" = ? AND ppt.\"CountryCode\" = ?";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, passportNumber);
+            ps.setString(2, countryCode);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    Integer personId  = rs.getInt("PersonID");
+                    String givenName  = rs.getString("GivenName");
+                    String surname    = rs.getString("Surname");
+                    String dob        = rs.getString("DateOfBirth");
+                    String aNumber    = rs.getString("ANumber");
+                    String issueDate  = rs.getString("IssueDate");
+                    String expDate    = rs.getString("ExpDate");
+
+                    System.out.println("Found: " + surname.toUpperCase() + ", " + givenName.toUpperCase()
+                            + " | DOB: " + dob
+                            + " | Citizen of: " + countryCode
+                            + " | Passport Issued: " + issueDate
+                            + " | Expiry: " + expDate);
+
+                    return new PassportLookupResult(
+                            true, passportNumber, countryCode,
+                            personId, givenName, surname, dob,
+                            aNumber, issueDate, expDate
+                    );
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println(e.getMessage());
+            // continue admission with provided passport values even if lookup failed due to error
+        }
+
+        System.out.println("No present records found...Continuing admission.\n");
+        return new PassportLookupResult(
+                false, passportNumber, countryCode,
+                null, null, null, null,
+                null, null, null
+        );
+    }
+
+
+
 }
