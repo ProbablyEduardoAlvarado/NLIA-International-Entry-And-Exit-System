@@ -28,7 +28,7 @@ J1 # Exchange Visitor, FALSE
 L1 # Intracompany Transferee, FALSE
 O1 # Extraordinary Ability, FALSE
 PAR # Parolee Status, FALSE
-PR # Lawful Permanent Resident (General Status), TRUE
+PR # Returning Lawful Permanent Resident ARC, TRUE
 ARC # Alien Registration Card Lawful Permanent Resident Alias, TRUE
 LPR # Lawful Permanent Resident Alias, TRUE
 RF # Refugee Status Granted, FALSE
