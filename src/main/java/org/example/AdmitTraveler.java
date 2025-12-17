@@ -1,10 +1,8 @@
 package org.example;
+
 import java.sql.*;
 import java.time.LocalDate;
-import java.util.Objects;
 import java.util.Scanner;
-
-import static java.lang.Boolean.TRUE;
 import static org.example.Validators.*;
 import static org.example.admissionClasses.*;
 
@@ -37,10 +35,66 @@ public class AdmitTraveler {
         String ArrivalDate;
         String AdmissionClass = "";
         String AlienNumber = ""; // Declared here for function scope
-
         int length;
 
-        // --- 1. Given Name ---
+        /*
+         * Query the DB with the initial Passport details and country details to check for an existing
+         * passport/person record to populate the remaining biographical details section (and A-Number if it's there)
+         * to expedite the process to the flight and admission details
+         */
+
+        // --- 1. Passport Number ---
+        System.out.print("Enter Passport Number: ");
+        do {
+            PassportNumber = scanner.nextLine().trim().toUpperCase();
+            if (PassportNumber.length() != 9) {
+                System.err.println("Invalid Input.  Passports must have 9 characters.");
+            }
+        } while (PassportNumber.length() != 9);
+        // --- 2. Country of Citizenship ---
+        do {
+            System.out.print("Enter Country of Citizenship (3-letter Code): ");
+            CountryCode = scanner.nextLine().trim().toUpperCase();
+            if (!isValidCode(CountryCode)) {
+                System.err.println("Invalid input. Country Code must be a 3-letter code found in the valid list.\n");
+            }
+        } while (!isValidCode(CountryCode));
+
+        String selectQuery = "SELECT ppt.\"IssueDate\", ppt.\"ExpDate\", per.* " +
+                "FROM PUBLIC.\"Passport\" AS ppt " +
+                "INNER JOIN PUBLIC.\"Person\" AS per " +
+                "ON ppt.\"PassportNumber\" = per.\"PassportNumber\" AND ppt.\"CountryCode\" = per.\"PassportCountryCode\" " +
+                "WHERE p.\"PassportNumber\" = ? AND p.\"CountryCode\" = ?";
+        try (PreparedStatement ps = conn.prepareStatement(selectQuery)) {
+            ps.setString(1, PassportNumber);
+            ps.setString(2, CountryCode);
+
+            try (ResultSet rs = ps.executeQuery()) {
+
+                if (rs.next()){ // Retrieve the values and proceed to the flight details
+                    PassportIssueDate = rs.getString("IssueDate");
+                    PassportExpiry = rs.getString("ExpDate");
+                    GivenName = rs.getString("GivenName");
+                    Surname = rs.getString("Surname");
+                    DOB = rs.getString("DateOfBirth");
+                    if ((rs.getString("ANumber") !=null && !("USA".equals(CountryCode)))){
+                        AlienNumber = rs.getString("ANumber");
+                    }
+                    System.out.println("Found: " + Surname.toUpperCase() + ", "+ GivenName.toUpperCase());
+                }else{ // No passport found, proceed to entering the rest of the passport details
+
+                }
+
+
+            }catch(SQLException e){
+                System.err.println(e.getMessage());
+            }
+        } catch (RuntimeException | SQLException e) {
+            throw new RuntimeException(e);
+            System.err.println(e.getMessage());
+        }
+
+        // --- 3. Given Name ---
         // Constraint: GivenName < 50 chars and only CHARS
         do {
             System.out.print("Enter Given Name: ");
@@ -54,7 +108,7 @@ public class AdmitTraveler {
             }
         } while (length > 50 || !containsOnlyLetters(GivenName));
 
-        // --- 2. Surname ---
+        // --- 4. Surname ---
         // Constraint: Surname < 50 chars and only CHARS
         do {
             System.out.print("Enter Surname: ");
@@ -68,7 +122,7 @@ public class AdmitTraveler {
             }
         } while (length > 50 || !containsOnlyLetters(Surname));
 
-        // --- 3. Date of Birth ---
+        // --- 5. Date of Birth ---
         do {
             System.out.print("Enter Date of Birth (YYYY-MM-DD): ");
             DOB = scanner.nextLine();
@@ -76,23 +130,6 @@ public class AdmitTraveler {
                 System.err.println("Invalid input. Date must be in YYYY-MM-DD format.\n");
             }
         } while (!isValidDate(DOB));
-
-        // --- 4. Passport Number ---
-        System.out.print("Enter Passport Number: ");
-        do {
-            PassportNumber = scanner.nextLine().trim().toUpperCase();
-            if (PassportNumber.length() != 9) {
-                System.err.println("Invalid Input.  Passports must have 9 characters.");
-            }
-        } while (PassportNumber.length() != 9);
-        // --- 5. Country of Citizenship ---
-        do {
-            System.out.print("Enter Country of Citizenship (3-letter Code): ");
-            CountryCode = scanner.nextLine().trim().toUpperCase();
-            if (!isValidCode(CountryCode)) {
-                System.err.println("Invalid input. Country Code must be a 3-letter code found in the valid list.\n");
-            }
-        } while (!isValidCode(CountryCode));
 
         // --- 6. Passport Issue Date ---
         do {
@@ -188,7 +225,7 @@ public class AdmitTraveler {
         } else { // Returning Permanent Residents (Green Card Holders) 'PR' Class, will receive expedited validation
             admissionClasses.printDebugStatus(); // Temporary Debug statement ensuring the AdmissionClasses have been parsed.
             boolean isAdmissionClassValid;
-            System.out.println("Enter the Admission Class of the Arriving Alien \nReturning Permanent Residents may be coded as 'PR'/'ARC'/'LPR");
+            System.out.println("Enter the Admission Class of the Arriving Alien \nReturning Permanent Residents may be coded as 'PR'/'ARC'/'LPR'");
             do {
                 AdmissionClassInput = scanner.nextLine();
                 isAdmissionClassValid = admissionClassValidator(AdmissionClassInput);
@@ -387,11 +424,13 @@ public class AdmitTraveler {
                     System.out.println("ADMITTED NON-IMMIGRANT: CLASS " + AdmissionClass);
                     System.out.println("Exit Date: " + ExitDate);
                     if (AlienNumber != null && !AlienNumber.isEmpty()) {
+                        AlienNumber = "A"+AlienNumber; // Sets the A Number formatting to be passed to the Database and only when a not null is detected.
                         System.out.println("A-Number: " + AlienNumber);
                     }
                 } else {
                     System.out.println("DENIED ADMISSION: CLASS " + AdmissionClass);
                     System.out.println("Reason: " + NotAdmittedReason);
+                    AlienNumber = "A"+AlienNumber;
                     System.out.println("A-Number: " + AlienNumber);
                     System.out.println("Removal Date: " + ExitDate);
                 }
