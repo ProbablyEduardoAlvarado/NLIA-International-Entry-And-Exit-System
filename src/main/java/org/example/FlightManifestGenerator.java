@@ -144,7 +144,7 @@ public class FlightManifestGenerator {
                     return;
                 }
 
-                // Console header (only when rows exist)
+                // Console header
                 System.out.println("\nManifest: " + airlineCode + flightNumber + " on " + flightDate);
                 System.out.println("Writing output to: " + outFile.toAbsolutePath());
                 System.out.println("--------------------------------------------------------------------------");
@@ -155,7 +155,7 @@ public class FlightManifestGenerator {
                 // Print
                 for (String s : manifestLines) System.out.println(s);
 
-                // Write full file (header + rows)
+                // Write full file headers
                 try (BufferedWriter writer = Files.newBufferedWriter(outFile, StandardCharsets.UTF_8)) {
                     writer.write("CBP FIELD OPS NEWARK LIBERTY INTL AIRPORT PNR MANIFEST ");
                     writer.newLine();
