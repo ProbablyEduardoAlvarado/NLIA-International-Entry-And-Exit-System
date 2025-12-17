@@ -1,8 +1,10 @@
 package org.example;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -15,7 +17,6 @@ import java.util.Scanner;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 
 /*
@@ -26,30 +27,46 @@ public class Validators {
     // --- Country Code Validator Logic (Pre-loaded from resource file) ---
 
     private static final Set<String> VALID_CODES = new HashSet<>();
-    // NOTE: This resource file must be placed in src/main/resources/country_codes.txt
     private static final String RESOURCE_FILE = "country_codes.txt";
 
     static {
-        try (InputStream is = Validators.class.getClassLoader().getResourceAsStream(RESOURCE_FILE);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+        try (InputStream is = openCountryCodesStream()) {
 
             if (is == null) {
-                // If the resource is not found, throw an exception to halt startup
-                throw new Exception("Resource file not found: " + RESOURCE_FILE);
+                throw new FileNotFoundException(
+                        "Could not find " + RESOURCE_FILE + " on the classpath OR in the working directory."
+                );
             }
 
-            // Read all lines and process them
-            reader.lines()
-                    .map(String::trim)
-                    .filter(line -> !line.isEmpty())
-                    .forEach(VALID_CODES::add);
+            try (BufferedReader reader =
+                         new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+
+                reader.lines()
+                        .map(String::trim)
+                        .filter(line -> !line.isEmpty())
+                        .forEach(VALID_CODES::add);
+            }
+
+            // Optional sanity check
+            // System.out.println("Loaded " + VALID_CODES.size() + " country codes.");
 
         } catch (Exception e) {
-            // Print error and ensure the set is empty to prevent invalid input acceptance
-            System.err.println("FATAL: Could not load country codes from " + RESOURCE_FILE + ": " + e.getMessage());
+            System.err.println("FATAL: Could not load country codes from " + RESOURCE_FILE + ": " + e);
         }
     }
 
+    private static InputStream openCountryCodesStream() throws IOException {
+        InputStream is = Validators.class.getClassLoader().getResourceAsStream(RESOURCE_FILE);
+        if (is != null) return is;
+
+        Path p1 = Paths.get(RESOURCE_FILE); // working dir
+        if (Files.exists(p1)) return Files.newInputStream(p1);
+
+        Path p2 = Paths.get("src", "main", "resources", RESOURCE_FILE); // project layout
+        if (Files.exists(p2)) return Files.newInputStream(p2);
+
+        return null;
+    }
     /**
      * Checks if the given 3-letter code is in the set of valid country codes.
      */
@@ -155,7 +172,7 @@ public class Validators {
                 if (rs.next()) {
                     // If count > 0, an ANumber conflict was found.
                     if (rs.getInt(1) > 0) {
-                        System.err.println("❌ CONFLICT: ANumber is already assigned to a DIFFERENT passport record.");
+                        System.err.println("❌ CONFLICT: A-Number is already assigned to a DIFFERENT passport record.");
                         return false; // Validation Failed
                     }
                 }

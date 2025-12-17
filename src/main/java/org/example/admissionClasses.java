@@ -1,12 +1,16 @@
 package org.example;
 import java.io.BufferedReader;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * This will provide a private getter and a method to validate and calculate an Exit Date
@@ -27,82 +31,56 @@ public class admissionClasses {
 
     private static final String RESOURCE_FILE = "AdmissionClass.txt";
 
+    private static InputStream openAdmissionClassStream() throws Exception {
+        // 1) Try classpath
+        InputStream is = admissionClasses.class.getClassLoader().getResourceAsStream(RESOURCE_FILE);
+        if (is != null) return is;
 
+        // 2) Try working directory
+        Path p1 = Paths.get(RESOURCE_FILE);
+        if (Files.exists(p1)) return Files.newInputStream(p1);
+
+        // 3) Try project layout
+        Path p2 = Paths.get("src", "main", "resources", RESOURCE_FILE);
+        if (Files.exists(p2)) return Files.newInputStream(p2);
+
+        return null;
+    }
     // Static initializer block to load data once when the class is loaded
     static {
-        try (InputStream is = admissionClasses.class.getClassLoader().getResourceAsStream(RESOURCE_FILE);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+        try (InputStream is = openAdmissionClassStream()) {
 
             if (is == null) {
-                throw new Exception("Resource file not found: " + RESOURCE_FILE);
+                throw new FileNotFoundException(
+                        "Could not find " + RESOURCE_FILE + " on the classpath OR in the working directory OR src/main/resources."
+                );
             }
 
-            // Read all lines and process them
-            reader.lines()
-                    .map(String::trim)
-                    .filter(line -> !line.isEmpty() && !line.startsWith("#")) // Skip empty lines and comments
-                    .forEach(line -> {
-                        // The line structure is: CODE # Description, STATUS
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
 
-                        // 1. Get the part before the '#' (e.g., "VWP # Visa Waiver Program (ESTA), FALSE" -> "VWP ")
-                        String codeAndStatus = line.split("#")[0].trim();
+                reader.lines()
+                        .map(String::trim)
+                        .filter(line -> !line.isEmpty() && !line.startsWith("#"))
+                        .forEach(line -> {
+                            // your existing parsing logic unchanged
+                            int lastCommaIndex = line.lastIndexOf(',');
 
-                        // 2. Split by the comma (',') to separate the code from the status (e.g., "VWP " -> ["VWP", ""])
-                        // This assumes the file format is strictly "CODE , STATUS" - but the actual file uses "CODE # Desc, STATUS"
+                            if (lastCommaIndex != -1) {
+                                String beforeComma = line.substring(0, lastCommaIndex).trim();
+                                String isPermanentStr = line.substring(lastCommaIndex + 1).trim();
 
-                        // Let's re-evaluate the actual file content to find a reliable split.
-                        // The file: "DV # Diversity Visa Lottery Immigrant, TRUE"
-
-                        // A safer split is to find the *last* comma, which separates the description from the status.
-                        int lastCommaIndex = codeAndStatus.lastIndexOf(',');
-
-                        if (lastCommaIndex != -1) {
-                            String classCode = codeAndStatus.substring(0, lastCommaIndex).trim().toUpperCase();
-                            String isPermanentStr = codeAndStatus.substring(lastCommaIndex + 1).trim();
-
-                            if (!classCode.isEmpty()) {
-                                VALID_CODES.add(classCode);
+                                String classCode = beforeComma.split("#")[0].trim().toUpperCase();
+                                if (!classCode.isEmpty()) VALID_CODES.add(classCode);
+                                if ("TRUE".equalsIgnoreCase(isPermanentStr)) PERMANENT_RESIDENT_CLASSES.add(classCode);
                             }
+                        });
 
-                            if ("TRUE".equalsIgnoreCase(isPermanentStr)) {
-                                PERMANENT_RESIDENT_CLASSES.add(classCode);
-                            }
-                        } else {
-                            // Handle cases like "A1 # Ambassador..." where there is no comma before the #
-                            // The actual file has "A1 # Ambassador, Public Minister, Career Diplomatic/Consular Officer, FALSE"
-                            // A better approach is to simply split the whole line by comma, and use the first and last parts.
-
-                            String[] parts = line.split(",");
-                            if (parts.length >= 2) {
-                                // First part is the code/description: "A1 # Ambassador, Public Minister, Career Diplomatic/Consular Officer"
-                                String firstPart = parts[0];
-
-                                // Last part is the status: " FALSE"
-                                String isPermanentStr = parts[parts.length - 1].trim();
-
-                                // Extract the code from the first part (before the '#')
-                                String classCode = firstPart.split("#")[0].trim().toUpperCase();
-
-                                if (!classCode.isEmpty()) {
-                                    VALID_CODES.add(classCode);
-                                }
-
-                                if ("TRUE".equalsIgnoreCase(isPermanentStr)) {
-                                    PERMANENT_RESIDENT_CLASSES.add(classCode);
-                                }
-                            }
-                        }
-                    });
-
-
-            // Diagnostic check for codes loaded
-            System.out.println("DEBUG: Loaded " + VALID_CODES.size() + " Admission Class codes.");
-            System.out.println("DEBUG: Loaded " + PERMANENT_RESIDENT_CLASSES.size() + " Permanent Resident codes.");
-
+                System.out.println("DEBUG: Loaded " + VALID_CODES.size() + " Admission Class codes.");
+                System.out.println("DEBUG: Loaded " + PERMANENT_RESIDENT_CLASSES.size() + " Permanent Resident codes.");
+            }
 
         } catch (Exception e) {
-            System.err.println("FATAL: Could not load Admission Class codes from " + RESOURCE_FILE);
-            e.printStackTrace();
+            System.err.println("FATAL: Could not load Admission Class codes from " + RESOURCE_FILE + ": " + e);
         }
     }
 
@@ -148,33 +126,28 @@ public class admissionClasses {
         // Ensure the code is uppercase for the switch statement
         String upperCaseClass = AdmissionClass.toUpperCase();
 
-        switch (upperCaseClass){
+        exitDate = switch (upperCaseClass) {
             // Non-Resident aliens and tourists
-            case "B1", "B2":
+            case "B1", "B2" ->
                 // MAX 6 month stay (180 days)
-                exitDate = arrival.plusDays(180);
-                break;
-            case "VWP":
+                    arrival.plusDays(180);
+            case "VWP" ->
                 // Visa Waiver Program 90 Days
-                exitDate = arrival.plusDays(90);
-                break;
-            case "C1", "D":
-                // Transit Visa / Air/Seacrew. 
-                exitDate = arrival.plusDays(29);
-                break;
-            case "F1":
+                    arrival.plusDays(90);
+            case "C1", "D" ->
+                // Transit Visa / Air/Seacrew.
+                    arrival.plusDays(29);
+            case "F1" ->
                 // Academic Student - Duration of Status (D/S). For simulation, give a long date.
-                exitDate = arrival.plusYears(4).plusMonths(1); // 4 years + 1 month grace
-                break;
+                    arrival.plusYears(4).plusMonths(1); // 4 years + 1 month grace
             // All other non-immigrant codes not specifically handled above, default to a standard visitor max.
-            case "A1", "A2", "AS", "E1", "E2", "H1B", "J1", "L1", "O1", "PAR", "RF", "TN":
-                exitDate = arrival.plusDays(365);
-                break;
-            default:
+            case "A1", "A2", "AS", "E1", "E2", "H1B", "J1", "L1", "O1", "PAR", "RF", "TN" -> arrival.plusDays(365);
+            default -> {
                 // Fallback for codes not fully defined
                 System.err.println("WARNING: Admission Class " + AdmissionClass + " has no defined Exit Date rule. Defaulting to 1 day.");
-                exitDate = arrival.plusDays(1);
-        }
+                yield arrival.plusDays(1);
+            }
+        };
         // Return date in YYYY-MM-DD format
         return exitDate != null ? exitDate.toString() : null;
     }
