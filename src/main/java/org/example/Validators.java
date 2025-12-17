@@ -47,8 +47,8 @@ public class Validators {
                         .forEach(VALID_CODES::add);
             }
 
-            // Optional sanity check
-            // System.out.println("Loaded " + VALID_CODES.size() + " country codes.");
+            // Debugger check for the loading
+            System.out.println("Loaded " + VALID_CODES.size() + " country codes.");
 
         } catch (Exception e) {
             System.err.println("FATAL: Could not load country codes from " + RESOURCE_FILE + ": " + e);
@@ -81,6 +81,7 @@ public class Validators {
     /**
      * Checks if the given string is a valid date in YYYY-MM-DD format.
      */
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public static boolean isValidDate(String dateStr) {
         try {
             if (dateStr == null || dateStr.isEmpty()) return false;
@@ -98,6 +99,7 @@ public class Validators {
     /**
      * Checks if the given string contains only letters and spaces.
      */
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public static boolean containsOnlyLetters(String str) {
         if (str == null || str.trim().isEmpty()) return false;
         Matcher matcher = LETTER_SPACE_PATTERN.matcher(str);
@@ -179,9 +181,6 @@ public class Validators {
             }
             return true; // Validation Passed
 
-        } catch (SQLException e) {
-            // Re-throw the SQLException to allow the calling method (AdmitTraveler) to handle the exception gracefully
-            throw e;
         }
     }
 

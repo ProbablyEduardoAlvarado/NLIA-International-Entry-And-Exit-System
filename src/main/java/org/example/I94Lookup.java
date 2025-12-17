@@ -1,14 +1,9 @@
 package org.example;
 
-import org.postgresql.PGNotification;
-
-import javax.xml.transform.Result;
 import java.sql.*;
 import java.util.Scanner;
 
 import static org.example.Validators.isValidCode;
-import static org.example.Validators.isValidDate;
-import static org.example.admissionClasses.printDebugStatus;
 
 public class I94Lookup {
     /**
@@ -25,9 +20,6 @@ public class I94Lookup {
     public void lookupI94(Connection conn) { // Changed parameter to Connection
         // Use the 'conn' object here to query the database.
         System.out.println("\n----- I-94 Lookup -----");
-        String AlienNumber;
-        String PassportNumber;
-        String CountryCode;
         Scanner scanner = new Scanner(System.in);
 
 
@@ -58,7 +50,6 @@ public class I94Lookup {
      * First, validate the Number is in format to pass to the DB
      * Second, Returns the Arrival/Departure Record for that A-Number
      *
-     * @throws SQLException if the ANumber is invalid
      * @returns I94Record for the A Number
      */
     private void aNumberI94Lookup(Connection conn) {
@@ -95,7 +86,6 @@ public class I94Lookup {
                         // --- 1. Retrieve Data for the Current Row ---
                         String I94 = rs.getString("I-94 #");
                         String Passport = rs.getString("Passport");
-                        String Flight = rs.getString("Flight");
                         String entryDate = String.valueOf(rs.getDate("EntryDate"));
                         // Get the Date object directly. This will be null if the DB value is null.
                         Date exitDateObject = rs.getDate("ExitDate");
@@ -120,7 +110,7 @@ public class I94Lookup {
                     }
                     // No Results handler
                     if (!foundRecords) {
-                        System.err.println("❌ Database Error: Function executed successfully but returned no results for the Alien Number provided.");
+                        System.err.println("Database Error: Function executed successfully but returned no results for the Alien Number provided.");
                     }Thread.sleep(5000); // Gives someone a chance to read the result before resetting.
                 } catch (RuntimeException | SQLException e) {
                     throw new RuntimeException(e);
@@ -136,7 +126,7 @@ public class I94Lookup {
      *        First, validate the Country Code is correct
      *        Second, Validates the Passport Length conforms
      * @returns I94Record for the A Number
-     * @throws java.sql.SQLException  if the ANumber is invalid
+     * @throws RuntimeException  if the ANumber is invalid
      */
     private static void passportI94Lookup(Connection conn){
         Scanner scanner = new Scanner(System.in);
@@ -223,7 +213,7 @@ public class I94Lookup {
 
                     // No Results handler
                     if (!foundRecords) {
-                        System.err.println("❌ Database Error: Function executed successfully but returned no results (PersonID, I94RecordID).");
+                        System.err.println("Database Error: Function executed successfully but returned no results (PersonID, I94RecordID).");
                     }
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -231,9 +221,7 @@ public class I94Lookup {
             }
         } catch (java.sql.SQLException e) {
             // Handle database connection or query execution errors
-            e.printStackTrace();
         }
-        return;
     }
     // In I94Lookup.java
     public boolean checkI94ForAdmissionByPassport(Connection conn, String passportNumber, String passportCountryCode) {
@@ -250,7 +238,7 @@ public class I94Lookup {
 
             try (ResultSet rs = ps.executeQuery()) {
 
-                // show any NOTICE messages from the DB function (same pattern you use for A-number)
+                // the I-94 return will raise a notice saying the passport bearer was returned.
                 for (SQLWarning w = ps.getWarnings(); w != null; w = w.getNextWarning()) {
                     System.out.println(w.getMessage());
                 }
@@ -277,7 +265,7 @@ public class I94Lookup {
                             + " | COA: " + coa
                             + " | Departed: " + exitDate);
 
-                    // match your A-number logic: don’t treat PAR as a “prior removal” warning
+                    // Parole class 'PAR' is not an admission per the INA, so it should not be subject to an inadmissibility throw.
                     if (!admitted && !"PAR".equalsIgnoreCase(coa)) {
                         hasPriorRemoval = true;
                         System.err.println("----PRIOR REMOVAL/INADMISSIBILITY----\n"

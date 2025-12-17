@@ -121,7 +121,7 @@ public class admissionClasses {
         }
 
         LocalDate arrival = LocalDate.parse(ArrivalDate);
-        LocalDate exitDate = null;
+        LocalDate exitDate;
 
         // Ensure the code is uppercase for the switch statement
         String upperCaseClass = AdmissionClass.toUpperCase();
@@ -149,6 +149,7 @@ public class admissionClasses {
             }
         };
         // Return date in YYYY-MM-DD format
+        //noinspection ConstantValue
         return exitDate != null ? exitDate.toString() : null;
     }
 

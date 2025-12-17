@@ -332,7 +332,7 @@ public class AdmitTraveler {
             }
         }
 
-        // --- Final Processing & SQL Execution (Moved outside admission IF/ELSE for consistent execution) ---
+        // --- Final Processing & SQL Execution ---
 
         // List the prepared traveler record.
         System.out.println("----- Traveler Details ----- \n" +
@@ -412,7 +412,7 @@ public class AdmitTraveler {
                 cs.setObject(16, ExitDate, Types.DATE); // explicitly cast by '::date'
                 cs.setObject(17, NotAdmittedReason, Types.VARCHAR);
 
-                // Fix 2: Execute the function using executeQuery to retrieve the Result Set (PersonID, I94RecordID)
+                // Execute the function using executeQuery to retrieve the Result Set (PersonID, I94RecordID)
                 try (ResultSet rs = cs.executeQuery()) {
                     if (rs.next()) {
                         int personId = rs.getInt(1);
