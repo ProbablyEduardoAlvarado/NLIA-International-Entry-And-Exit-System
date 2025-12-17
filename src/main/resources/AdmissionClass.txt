@@ -5,7 +5,7 @@ A2 # Other Foreign Government Official or Employee, FALSE
 AS # Asylee Status Granted, FALSE
 B1 # Business Visitor, FALSE
 B2 # Tourist Visitor or Medical Treatment, FALSE
-C # Citizen (Used for record identification), FALSE
+C # US Citizen, FALSE
 C1 # Transit Alien, FALSE
 D # Crewman (Sea or Air), FALSE
 DV # Diversity Visa Lottery Immigrant, TRUE
