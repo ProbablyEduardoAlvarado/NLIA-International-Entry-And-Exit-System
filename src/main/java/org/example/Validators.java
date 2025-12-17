@@ -24,8 +24,17 @@ import java.util.regex.Pattern;
  */
 public class Validators {
 
-    // --- Country Code Validator Logic (Pre-loaded from resource file) ---
+    // --- Recursion helper: search parent dirs for a filename ---
+    private static Path findFileUpwards(Path startDir, String filename, int depth) {
+        if (startDir == null || depth < 0) return null;
 
+        Path candidate = startDir.resolve(filename);
+        if (Files.exists(candidate)) return candidate;
+
+        return findFileUpwards(startDir.getParent(), filename, depth - 1); // recursion
+    }
+
+    // --- Country Code Validator Logic (Pre-loaded from resource file) ---
     private static final Set<String> VALID_CODES = new HashSet<>();
     private static final String RESOURCE_FILE = "country_codes.txt";
 
@@ -34,7 +43,8 @@ public class Validators {
 
             if (is == null) {
                 throw new FileNotFoundException(
-                        "Could not find " + RESOURCE_FILE + " on the classpath OR in the working directory."
+                        "Could not find " + RESOURCE_FILE + " on the classpath, working directory, " +
+                                "resources folder, or parent directories."
                 );
             }
 
@@ -47,7 +57,6 @@ public class Validators {
                         .forEach(VALID_CODES::add);
             }
 
-            // Debugger check for the loading
             System.out.println("Loaded " + VALID_CODES.size() + " country codes.");
 
         } catch (Exception e) {
@@ -56,14 +65,21 @@ public class Validators {
     }
 
     private static InputStream openCountryCodesStream() throws IOException {
+        // 1) classpath
         InputStream is = Validators.class.getClassLoader().getResourceAsStream(RESOURCE_FILE);
         if (is != null) return is;
 
-        Path p1 = Paths.get(RESOURCE_FILE); // working dir
+        // 2) working dir
+        Path p1 = Paths.get(RESOURCE_FILE);
         if (Files.exists(p1)) return Files.newInputStream(p1);
 
-        Path p2 = Paths.get("src", "main", "resources", RESOURCE_FILE); // project layout
+        // 3) typical Maven/Gradle layout
+        Path p2 = Paths.get("src", "main", "resources", RESOURCE_FILE);
         if (Files.exists(p2)) return Files.newInputStream(p2);
+
+        // 4) recursion: search upwards from current absolute dir
+        Path found = findFileUpwards(Paths.get("").toAbsolutePath(), RESOURCE_FILE, 8);
+        if (found != null) return Files.newInputStream(found);
 
         return null;
     }
@@ -132,13 +148,13 @@ public class Validators {
                 // If the table is empty or ANumber column is all null, start at the default.
                 System.out.println("No existing A-Numbers found. Starting generation at: " + maxANumber);
             }
-        } catch (SQLException e) {
-            // Log the detailed database error
-            System.err.println("❌ Error Generating next A Number.");
-            System.err.println("  > SQL State: " + e.getSQLState());
-            System.err.println("  > Error Code: " + e.getErrorCode());
-            System.err.println("  > Database Message: " + e.getMessage()); // <-- This is the key piece of information!
-            throw e;
+        }  catch (SQLException e) {
+        // Log the detailed database error
+        System.err.println("❌ Error Generating next A Number.");
+        System.err.println("  > SQL State: " + e.getSQLState());
+        System.err.println("  > Error Code: " + e.getErrorCode());
+        System.err.println("  > Database Message: " + e.getMessage()); // <-- This is the key piece of information!
+        throw e;
         }
 
         // Return the new number formatted as a string
@@ -148,11 +164,10 @@ public class Validators {
 
     /**
      * Checks if the given ANumber is a conflict (already assigned to a different passport combination).
-     *
-     * @param conn           The active database connection.
-     * @param aNumber        The Alien Number to check.
+     * @param conn The active database connection.
+     * @param aNumber The Alien Number to check.
      * @param passportNumber The passport number to match.
-     * @param countryCode    The passport country code to match.
+     * @param countryCode The passport country code to match.
      * @return true if the ANumber is valid for this traveler (or not in DB); false if conflict found.
      * @throws SQLException If a database error occurs.
      */
@@ -185,7 +200,6 @@ public class Validators {
 
         }
     }
-
     private static String normalizeANumberDigits(String aNumber) {
         if (aNumber == null) return null;
         String s = aNumber.trim();
@@ -320,4 +334,4 @@ public class Validators {
 
         return digits;
     }
-}
+    }
