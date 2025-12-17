@@ -67,6 +67,7 @@ public class Validators {
 
         return null;
     }
+
     /**
      * Checks if the given 3-letter code is in the set of valid country codes.
      */
@@ -131,13 +132,13 @@ public class Validators {
                 // If the table is empty or ANumber column is all null, start at the default.
                 System.out.println("No existing A-Numbers found. Starting generation at: " + maxANumber);
             }
-        }  catch (SQLException e) {
-        // Log the detailed database error
-        System.err.println("❌ Error Generating next A Number.");
-        System.err.println("  > SQL State: " + e.getSQLState());
-        System.err.println("  > Error Code: " + e.getErrorCode());
-        System.err.println("  > Database Message: " + e.getMessage()); // <-- This is the key piece of information!
-        throw e;
+        } catch (SQLException e) {
+            // Log the detailed database error
+            System.err.println("❌ Error Generating next A Number.");
+            System.err.println("  > SQL State: " + e.getSQLState());
+            System.err.println("  > Error Code: " + e.getErrorCode());
+            System.err.println("  > Database Message: " + e.getMessage()); // <-- This is the key piece of information!
+            throw e;
         }
 
         // Return the new number formatted as a string
@@ -147,10 +148,11 @@ public class Validators {
 
     /**
      * Checks if the given ANumber is a conflict (already assigned to a different passport combination).
-     * @param conn The active database connection.
-     * @param aNumber The Alien Number to check.
+     *
+     * @param conn           The active database connection.
+     * @param aNumber        The Alien Number to check.
      * @param passportNumber The passport number to match.
-     * @param countryCode The passport country code to match.
+     * @param countryCode    The passport country code to match.
      * @return true if the ANumber is valid for this traveler (or not in DB); false if conflict found.
      * @throws SQLException If a database error occurs.
      */
@@ -184,63 +186,138 @@ public class Validators {
         }
     }
 
+    private static String normalizeANumberDigits(String aNumber) {
+        if (aNumber == null) return null;
+        String s = aNumber.trim();
+        if (s.isEmpty()) return null;
+        if (s.startsWith("A") || s.startsWith("a")) s = s.substring(1);
+        s = s.trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    private static String findExistingANumberDigits(Connection conn, String passportNumber, String countryCode) throws SQLException {
+        final String sql =
+                "SELECT \"ANumber\" " +
+                        "FROM PUBLIC.\"Person\" " +
+                        "WHERE \"PassportNumber\" = ? AND \"PassportCountryCode\" = ? " +
+                        "LIMIT 1";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, passportNumber.trim());
+            ps.setString(2, countryCode.trim());
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return normalizeANumberDigits(rs.getString("ANumber"));
+                }
+            }
+        }
+        return null;
+    }
+
     /**
      * Helper method to get the Alien Number, which is **mandatory** for immigrants and denied entries.
      * If the user doesn't provide a valid A-Number, one is generated automatically.
      */
     public static String getAlienNumberMandatory(Scanner scanner, Connection conn, String passportNumber, String countryCode) throws SQLException {
-        String alienNumber;
-        boolean isValid = false;
+        // An A-Number should be added to future records of a person if someone already has it
+        String existingDigits = findExistingANumberDigits(conn, passportNumber, countryCode);
 
-        System.out.println("Enter Alien Registration Number (A-Number - Mandatory, or press Enter to GENERATE new one): ");
-        alienNumber = scanner.nextLine().trim();
+        System.out.println("Enter Alien Registration Number (A-Number - Mandatory).");
+        if (existingDigits != null) {
+            System.out.println("Press Enter to USE existing A-Number on file.");
+        } else {
+            System.out.println("Press Enter to GENERATE a new A-Number.");
+        }
 
-        if (!alienNumber.isEmpty()) {
-            if (alienNumber.length() < 7 || !alienNumber.matches("\\d+")) {
-                System.err.println("Invalid format. A-Number must be a digit-only string (7+ digits). Attempting automatic generation.");
-            } else {
-                // If provided and passes format check, perform A-Number conflict check
-                if (isANumberValid(conn, alienNumber, passportNumber, countryCode)) {
-                    isValid = true;
-                } else {
-                    System.err.println("The entered A-Number conflicts with an existing record. Attempting automatic generation.");
-                }
+        String input = scanner.nextLine().trim();
+
+        // 1) If user hits Enter:
+        if (input.isEmpty()) {
+            if (existingDigits != null) {
+                System.out.println("Using existing A-Number on file: A" + existingDigits);
+                return existingDigits; // return digits only (caller may prefix "A")
             }
+
+            String generated = generateNextANumber(conn);
+            System.out.println("Automatically generated new A-Number: A" + generated);
+            return generated;
         }
 
-        // If not valid (either empty, invalid format, or conflicted), generate a new one
-        if (!isValid) {
-            alienNumber = generateNextANumber(conn);
-            System.out.println("✅ Automatically generated new A-Number: A" + alienNumber);
+        // 2) If user typed something, accept either "A#########" or "#########"
+        String enteredDigits = normalizeANumberDigits(input);
+
+        if (enteredDigits == null || enteredDigits.length() < 7 || !enteredDigits.matches("\\d+")) {
+            System.err.println("Invalid format. A-Number must be digits (optionally starting with 'A').");
+
+            // If there is already one on file, prefer it over generating a new one.
+            if (existingDigits != null) {
+                System.out.println("Reverting to existing A-Number on file: A" + existingDigits);
+                return existingDigits;
+            }
+
+            String generated = generateNextANumber(conn);
+            System.out.println("Automatically generated new A-Number: A" + generated);
+            return generated;
         }
 
-        return alienNumber;
+        // 3) Conflict check (only if user provided a new value)
+        if (isANumberValid(conn, enteredDigits, passportNumber, countryCode)) {
+            return enteredDigits;
+        }
+
+        System.err.println("The entered A-Number conflicts with an existing record.");
+
+        // If person already has one on file, use it instead of generating a second one.
+        if (existingDigits != null) {
+            System.out.println("Using existing A-Number on file: A" + existingDigits);
+            return existingDigits;
+        }
+
+        String generated = generateNextANumber(conn);
+        System.out.println("Automatically generated new A-Number: A" + generated);
+        return generated;
     }
+
 
     /**
      * Helper method to get the Alien Number, which is **optional** for admitted non-immigrants.
      * Returns null if the user skips entering a value, which allows the database to store NULL.
      */
     public static String getAlienNumberOptional(Scanner scanner, Connection conn, String passportNumber, String countryCode) throws SQLException {
-        String alienNumber;
-        System.out.print("Enter Alien Registration Number (A-Number - Optional, press Enter to skip): ");
-        alienNumber = scanner.nextLine().trim();
+        // If this passport already has an A-Number on file, prefer reusing it (don’t wipe it out to NULL).
+        String existingDigits = findExistingANumberDigits(conn, passportNumber, countryCode);
 
-        // If provided, apply basic validation and conflict check
-        if (!alienNumber.isEmpty()) {
-            if (alienNumber.length() < 9 || !alienNumber.matches("\\d+")) {
-                System.err.println("Warning: Invalid A-Number format detected. Returning NULL.");
-                return null;
-            }
-
-            // Perform A-Number conflict check against the database
-            if (!isANumberValid(conn, alienNumber, passportNumber, countryCode)) {
-                System.err.println("Warning: A-Number conflict detected. Returning NULL.");
-                return null;
-            }
+        System.out.print("Enter Alien Registration Number (A-Number - Optional): ");
+        if (existingDigits != null) {
+            System.out.print("press Enter to USE existing A-Number on file, or type a new one: ");
+        } else {
+            System.out.print("press Enter to skip: ");
         }
 
-        // If empty, return null to be stored in DB as NULL. Otherwise, return the validated value.
-        return alienNumber.isEmpty() ? null : alienNumber;
+        String input = scanner.nextLine().trim();
+
+        // If user hits Enter:
+        if (input.isEmpty()) {
+            // Reuse existing if present; otherwise truly skip (NULL).
+            return existingDigits; // may be null
+        }
+
+        // Accept either "A#########" or "#########"
+        String digits = normalizeANumberDigits(input);
+
+        // Optional: if invalid, fall back to existing (if any), otherwise NULL.
+        if (digits == null || digits.length() < 9 || !digits.matches("\\d+")) {
+            System.err.println("Warning: Invalid A-Number format detected.");
+            return existingDigits; // if null, this correctly returns NULL
+        }
+
+        // Conflict check: only needed if user typed a value
+        if (!isANumberValid(conn, digits, passportNumber, countryCode)) {
+            System.err.println("Warning: A-Number conflict detected.");
+            return existingDigits; // if null, this correctly returns NULL
+        }
+
+        return digits;
     }
 }
