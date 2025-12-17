@@ -1,10 +1,14 @@
 package org.example;
 
+import org.postgresql.PGNotification;
+
+import javax.xml.transform.Result;
 import java.sql.*;
 import java.util.Scanner;
 
 import static org.example.Validators.isValidCode;
 import static org.example.Validators.isValidDate;
+import static org.example.admissionClasses.printDebugStatus;
 
 public class I94Lookup {
     /**
@@ -12,11 +16,12 @@ public class I94Lookup {
      * Integrates the I-94 Function in the SQL DB and returns an entire Admission/Departure Record for a certain individual.
      *
      * @param conn query the DB.
-     * The Record is returned in two ways:
-
-     * METHOD 2 - Lookup by Passport Number & Passport Issuing Country
+     *             The Record is returned in two ways:
+     *             <p>
+     *             METHOD 2 - Lookup by Passport Number & Passport Issuing Country
      * @returns I94Record
-     * */
+     *
+     */
     public void lookupI94(Connection conn) { // Changed parameter to Connection
         // Use the 'conn' object here to query the database.
         System.out.println("\n----- I-94 Lookup -----");
@@ -26,50 +31,107 @@ public class I94Lookup {
         Scanner scanner = new Scanner(System.in);
 
 
-        System.out.println("Select a Lookup method - \n 1. Via A-Number\n 2. Via Passport");
-        int choice;
-        do {
-            choice = 0;
-            choice = scanner.nextInt();
-            switch (choice) {
-                case 1:
-                    aNumberI94Lookup();
-                    break;
-                case 2:
+        while (true) {
+            System.out.println("Select a Lookup method - \n 1. Via A-Number\n 2. Via Passport\n (type 'back' to return)");
+            String choice = scanner.nextLine().trim();
+
+            switch (choice.toLowerCase()) {
+                case "1":
+                    aNumberI94Lookup(conn);          // or pass scanner in if you want one scanner everywhere
+                    return;
+                case "2":
                     passportI94Lookup(conn);
-                    break;
+                    return;
+                case "back":
+                case "quit":
+                case "exit":
+                    return;
                 default:
-                    System.err.println("Invalid Input, enter only 1 or 2.");
+                    System.err.println("Invalid input. Enter 1 or 2.");
             }
-        } while ((choice == 0));
+        }
     }
 
-    /** METHOD 1 - Lookup by Alien Registration Number
-     * Uses the A-Number entered to
-     *        First, validate the Number is in format to pass to the DB
-     *        Second, Returns the Arrival/Departure Record for that A-Number
+    /**
+     * METHOD 1 - Lookup by Alien Registration Number
+     * Uses the A-Number entered to -
+     * First, validate the Number is in format to pass to the DB
+     * Second, Returns the Arrival/Departure Record for that A-Number
+     *
+     * @throws SQLException if the ANumber is invalid
      * @returns I94Record for the A Number
-     * @throws java.sql.SQLException if the ANumber is invalid
      */
-    private void aNumberI94Lookup(){
+    private void aNumberI94Lookup(Connection conn) {
 
         Scanner scanner = new Scanner(System.in);
         String AlienNumber; // For later: Use an int to validated and then convert into string once validated...?
         System.out.println("Enter the Alien Registration Number of the Traveler");
         do {
             AlienNumber = scanner.nextLine();
-                if (AlienNumber.length() < 9 || !AlienNumber.matches("\\d+")) {
-                    AlienNumber = null; // Consumes and resets the input
-                    System.err.println("Invalid A-Number.  Enter a Valid Alien Registration Number.");
+            if (AlienNumber.length() < 9 || !AlienNumber.matches("\\d+")) {
+                AlienNumber = null; // Consumes and resets the input
+                System.err.println("Invalid A-Number.  Enter a Valid Alien Registration Number.");
             }
-        }while(AlienNumber == null);
-        AlienNumber = "A"+AlienNumber;
+        } while (AlienNumber == null);
+        AlienNumber = "A" + AlienNumber;
 
-        System.out.println(AlienNumber);
-        return;
+        System.out.println("Searching for A-Number: " + AlienNumber);
+
+            String selectQuery = "SELECT * FROM PUBLIC.\"Lookup_I94_Record\"(p_a_number := ?)";
+            try (PreparedStatement ps = conn.prepareStatement(selectQuery)) {
+                ps.setString(1, AlienNumber);
+                try (ResultSet rs = ps.executeQuery()) {
+
+                    // Retrieve warnings/notices
+                    for (SQLWarning w = ps.getWarnings(); w != null; w = w.getNextWarning()) {
+                        System.out.println(w.getMessage());
+                    }
+                    ps.clearWarnings();
+
+                    boolean foundRecords = false;
+                    while (rs.next()) {
+                        foundRecords = true;
+
+                        // --- 1. Retrieve Data for the Current Row ---
+                        String I94 = rs.getString("I-94 #");
+                        String Passport = rs.getString("Passport");
+                        String Flight = rs.getString("Flight");
+                        String entryDate = String.valueOf(rs.getDate("EntryDate"));
+                        // Get the Date object directly. This will be null if the DB value is null.
+                        Date exitDateObject = rs.getDate("ExitDate");
+                        // Perform the correct null check for the ExitDate
+                        String exitDate = (exitDateObject == null) ? "" : String.valueOf(exitDateObject);
+                        String admitClassCode = rs.getString("COA");
+                        String flightOriginCountry = rs.getString("ORIGIN");
+                        boolean admittedBool = rs.getBoolean("Admitted"); // Retrieve as boolean directly
+                        String notAdmittedReason = rs.getString("NotAdmittedReason");
+
+                        System.out.println("Record " + I94 + " | Passport: " + Passport + " | Origin: " + flightOriginCountry +
+                                "| Entered on " + entryDate + " | Admit Class: " + admitClassCode +
+                                "| Departed: " + exitDate);
+
+                        // Prior Removals will be flagged and raised and a thread sleep to give at least a brief ability to read before it pushes the console back to the main menu.
+                        if (!admittedBool && !"PAR".equalsIgnoreCase(admitClassCode)) { // FALSE should trigger that a person was removed prior.
+                            System.err.println("----PRIOR REMOVAL/INADMISSIBILITY----\nAlien was removed on " + exitDate +
+                                    ", and assigned Alien Number " + AlienNumber +
+                                    "\nRemoval Reason: " + notAdmittedReason + "\n-------------");
+
+                        }
+                    }
+                    // No Results handler
+                    if (!foundRecords) {
+                        System.err.println("❌ Database Error: Function executed successfully but returned no results for the Alien Number provided.");
+                    }Thread.sleep(5000); // Gives someone a chance to read the result before resetting.
+                } catch (RuntimeException | SQLException e) {
+                    throw new RuntimeException(e);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
     }
 
-    /** METHOD 2 - Lookup by Passport Data
+        /** METHOD 2 - Lookup by Passport Data
      * Uses the Passport Number and Issuing Country code entered to -
      *        First, validate the Country Code is correct
      *        Second, Validates the Passport Length conforms
