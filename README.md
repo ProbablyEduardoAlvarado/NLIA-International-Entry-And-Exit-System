@@ -27,7 +27,6 @@ This project will:
     - Upon execution, the Console will return a manifest using that filtered view and write a .txt file of the manifest 
       and all individuals, admission class, admission status and potential inadmissibility.
 
-
 - Future Plans:
   - Expand the DB to include exit record reporting (Expand the I-94 record to amend exit date to AdmitUntil, and add an ActualExit(ExitDate proper) for when a traveler exited)
     - This would permit a reasonable view for overstays and the analysis of potential inadmissibility for future entries in context of the INA or immigration benefits.
